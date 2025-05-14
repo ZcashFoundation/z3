@@ -24,10 +24,10 @@ jobs:
       id-token: 'write'
     uses: ./.github/workflows/sub-build-docker-image.yaml
     with:
-      repository: zingolabs/zaino
-      ref: 'dev'
+      repository: gustavovalverde/zaino
+      ref: 'imp-dockerfile'
       dockerfile_path: ./Dockerfile
-      dockerfile_target: tests
+      dockerfile_target: runtime
       image_name: zaino
       no_cache: ${{ inputs.no_cache || false }}
       rust_backtrace: full
