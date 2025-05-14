@@ -100,7 +100,7 @@ jobs:
           # We only publish images to DockerHub if a release is not a pre-release
           # Ref: https://github.com/orgs/community/discussions/26281#discussioncomment-3251177
           images: |
-            ghcr.io/${{ env.GITHUB_REPOSITORY_OWNER_PART }}/${{ env.GITHUB_REPOSITORY_NAME_PART_SLUG }}
+            ghcr.io/${{ env.GITHUB_REPOSITORY_OWNER_PART }}/${{ inputs.image_name }}
           # generate Docker tags based on the following events/attributes
           tags: |
             # - `pr-xxx`: Tags images with the pull request number.
