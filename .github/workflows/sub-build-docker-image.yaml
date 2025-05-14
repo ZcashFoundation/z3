@@ -68,6 +68,7 @@ jobs:
     permissions:
       contents: "read"
       id-token: "write"
+      packages: "write"
     env:
       DOCKER_BUILD_SUMMARY: ${{ vars.DOCKER_BUILD_SUMMARY }}
     steps:
@@ -146,3 +147,5 @@ jobs:
           # Don't read from the cache if the caller disabled it.
           # https://docs.docker.com/engine/reference/commandline/buildx_build/#options
           no-cache: ${{ inputs.no_cache }}
+          cache-from: type=gha,scope=z3-${{ inputs.image_name }}
+          cache-to: type=gha,mode=max,scope=z3-${{ inputs.image_name }}
