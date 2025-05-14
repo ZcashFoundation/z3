@@ -6,6 +6,12 @@ concurrency:
 
 on:
   workflow_dispatch:
+    inputs:
+      no_cache:
+        description: "Disable Docker cache for this build"
+        required: false
+        type: boolean
+        default: false
   push:
     branches:
       - dev
@@ -22,6 +28,7 @@ jobs:
     permissions:
       contents: 'read'
       id-token: 'write'
+      packages: 'write'
     uses: ./.github/workflows/sub-build-docker-image.yaml
     with:
       repository: gustavovalverde/zaino
