@@ -33,7 +33,7 @@ jobs:
     with:
       repository: gustavovalverde/zaino
       ref: 'imp-dockerfile'
-      dockerfile_path: ./Dockerfile
+      dockerfile_path: ./docker/Dockerfile
       dockerfile_target: runtime
       image_name: zaino
       no_cache: ${{ inputs.no_cache || false }}
