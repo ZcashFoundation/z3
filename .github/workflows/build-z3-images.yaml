@@ -1,4 +1,4 @@
-name: Build z3 images
+name: Build Z3 images
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}

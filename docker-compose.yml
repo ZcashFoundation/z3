@@ -1,0 +1,151 @@
+services:
+  zebra:
+    # TODO: Use zfnd/zebra:latest when zebra has curl installed
+    image: zfnd/zebra:latest # Using latest, specify a version tag if preferred
+    build:
+      context: .
+      dockerfile: Dockerfile.zebra
+    container_name: z3_zebra
+    restart: unless-stopped
+    platform: linux/amd64 # Uncomment if you need to specify platform
+    env_file:
+      - ./.env
+    environment:
+      - RUST_LOG=${ZEBRA_RUST_LOG}
+      - NETWORK=${NETWORK_NAME} # Zebra's network, derived from global NETWORK_NAME
+      - ZEBRA_COOKIE_DIR=${COOKIE_AUTH_FILE_DIR} # Zebra entrypoint uses this directory to store its .cookie
+      # - METRICS_ENDPOINT_ADDR=0.0.0.0:9999
+    volumes:
+      - zebra_data:/home/zebra/.cache/zebra
+      - shared_cookie_volume:${COOKIE_AUTH_FILE_DIR} # Zebra writes the cookie here
+    ports:
+      # Expose to host if direct access is needed
+      - "${ZEBRA_HOST_RPC_PORT}:${ZEBRA_RPC_PORT}" # Default Testnet RPC
+    networks:
+      - z3_net
+    # TODO: Make this healcheck simpler when we have a way to supply the cookie to Zebra
+    # This also needs to consider we're extracting the password from the cookie file
+    # using `cut -d ':' -f 2-`, because the file is formatted as "__cookie__:<random_string>"
+    healthcheck:
+      test: |
+        echo "Healthcheck script started. ENABLE_COOKIE_AUTH=${ENABLE_COOKIE_AUTH:-false}"
+        if [ "${ENABLE_COOKIE_AUTH:-false}" = "true" ]; then
+          echo "Cookie auth is ON."
+          echo "Attempting to use cookie file at: [${COOKIE_AUTH_FILE_DIR}/.cookie]"
+          if [ -f "${COOKIE_AUTH_FILE_DIR}/.cookie" ] && [ -s "${COOKIE_AUTH_FILE_DIR}/.cookie" ]; then
+            echo "Cookie file [${COOKIE_AUTH_FILE_DIR}/.cookie] found and not empty. Attempting curl with cookie."
+            curl -v --user "__cookie__:$(cat ${COOKIE_AUTH_FILE_DIR}/.cookie | cut -d ':' -f 2-)" --data-binary '{"jsonrpc": "2.0", "id":"healthcheck", "method": "getinfo", "params": [] }' -H 'Content-Type: application/json' http://127.0.0.1:${ZEBRA_RPC_PORT}/ || exit 1
+          else
+            echo "Cookie file [${COOKIE_AUTH_FILE_DIR}/.cookie] not found or empty. Exiting healthcheck with 1."
+            exit 1
+          fi
+        else
+          echo "Cookie auth is OFF. Attempting curl without cookie."
+          curl -s -f --user "" --data-binary '{"jsonrpc": "2.0", "id":"healthcheck", "method": "getinfo", "params": [] }' -H 'Content-Type: application/json' http://127.0.0.1:${ZEBRA_RPC_PORT}/ | grep -q '"result":' || exit 1
+        fi
+      interval: 30s
+      timeout: 30s
+      retries: 5
+      start_period: 30s
+
+  zaino:
+    image: docker pull ghcr.io/zcashfoundation/zaino:sha-54e0da6@sha256:5cf6db69280261e836d98e99b47e2601e825935c9f56134e7380d3a10adf7899
+    #! You can build the image yourself if you want to use a custom version
+    # build:
+    #   context: ../zaino
+    #   dockerfile: docker/Dockerfile
+    container_name: z3_zaino
+    restart: unless-stopped
+    # platform: linux/amd64
+    depends_on:
+      zebra:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    environment:
+      - RUST_LOG=${ZAINO_RUST_LOG}
+      - RUST_BACKTRACE=${ZAINO_RUST_BACKTRACE}
+      - ZAINO_NETWORK=${NETWORK_NAME}
+      # Connect to Zebra service using its name and port, cookie auth will be used if enabled globally.
+      - ZAINO_VALIDATOR_LISTEN_ADDRESS=zebra:${ZEBRA_RPC_PORT}
+      # This assignment enables cookie auth for Zaino if ENABLE_COOKIE_AUTH is true 
+      # AND its ZAINO_VALIDATOR_LISTEN_ADDRESS is non-loopback (which 'zebra:${ZEBRA_RPC_PORT}' is).
+      - ZAINO_VALIDATOR_COOKIE_AUTH_ENABLE=${ENABLE_COOKIE_AUTH}
+      - ZAINO_VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie # Zaino reads the cookie from this specific path
+      # Zaino's own RPC services
+      - ZAINO_GRPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
+      - ZAINO_JSON_RPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_JSON_RPC_PORT}
+    volumes:
+      - zaino_data:/home/zaino/.cache/zaino
+      - shared_cookie_volume:${COOKIE_AUTH_FILE_DIR}:ro # Zaino reads the cookie read-only
+    configs:
+      - source: zaino_tls_cert     # Use the top-level config for Zaino's cert
+        target: ${ZAINO_GRPC_TLS_CERT_PATH}    # Mount path inside container, FHS compliant via env var
+      - source: zaino_tls_key      # Use the top-level config for Zaino's key
+        target: ${ZAINO_GRPC_TLS_KEY_PATH}     # Mount path inside container, FHS compliant via env var
+    ports:
+      - "${ZAINO_HOST_GRPC_PORT}:${ZAINO_GRPC_PORT}"
+      - "${ZAINO_HOST_JSONRPC_PORT}:${ZAINO_JSON_RPC_PORT}"
+    networks:
+      - z3_net
+    healthcheck:
+      # Healthcheck needs to account for TLS if ZAINO_GRPC_TLS_ENABLE is true
+      # Use env vars for scheme and curl options, to be defined in .env
+      test: ["CMD-SHELL", "curl -f -k https://127.0.0.1:${ZAINO_GRPC_PORT} || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  zallet:
+    image: ghcr.io/zcashfoundation/zallet:sha-54e0da6@sha256:3710fb41dbad0f0457551b76a81c97e476f4addc9605498a0d0e34fbe4b8d4e9
+    #! You can build the image yourself if you want to use a custom version
+    # build:
+    #   context: ../wallet
+    #   dockerfile: docker/Dockerfile
+    container_name: z3_zallet
+    restart: unless-stopped
+    # platform: linux/amd64
+    depends_on:
+      zaino:
+        condition: service_healthy
+    env_file:
+      - ./.env
+    environment:
+      - RUST_LOG=${ZALLET_RUST_LOG}
+      - ZALLET_NETWORK=${NETWORK_NAME}
+      # Zallet indexer points to Zaino's gRPC service (hosted at 'zaino:${ZAINO_GRPC_PORT}').
+      # TLS for this connection needs to be handled by Zallet (e.g., trusting Zaino's cert).
+      # Refer to .env for potential CA path configuration if needed.
+      - ZALLET_INDEXER_VALIDATOR_ADDRESS=zaino:${ZAINO_GRPC_PORT}
+      - ZALLET_RPC_BIND=0.0.0.0:${ZALLET_RPC_PORT}
+    volumes:
+      - zallet_data:/home/zallet/.data
+      - ./config/zallet_identity.txt:/home/zallet/.data/identity.txt:ro 
+      # - ./config/tls/zaino.crt:/tls_trusted/zaino.crt:ro # Example mount for Zallet to trust Zaino
+    ports:
+      - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
+    networks:
+      - z3_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -f --data-binary '{\"jsonrpc\": \"2.0\", \"id\":\"healthcheck\", \"method\": \"help\", \"params\": [] }' -H 'Content-Type: application/json' http://127.0.0.1:${ZALLET_RPC_PORT}/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+volumes:
+  zebra_data:
+  zaino_data:
+  zallet_data:
+  shared_cookie_volume: {} # Define the shared volume for the cookie
+
+networks:
+  z3_net:
+    driver: bridge
+
+configs:
+  zaino_tls_cert:
+    file: ./config/tls/zaino.crt # Path on the host for Zaino's TLS cert
+  zaino_tls_key:
+    file: ./config/tls/zaino.key   # Path on the host for Zaino's TLS key

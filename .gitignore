@@ -15,3 +15,18 @@ target/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
+
+# Ignore all contents of the 'config' directory recursively
+config/**
+
+# Un-ignore the 'tls' subdirectory itself, so we can look inside it
+!config/tls/
+
+# Then ignore everything inside 'tls'
+config/tls/*
+
+# Then un-ignore the .gitkeep file within 'tls'
+!config/tls/.gitkeep
+
+# Un-ignore .gitkeep directly under config
+!config/.gitkeep
