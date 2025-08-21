@@ -1,0 +1,13 @@
+{{- if .Values.caddy.enabled }}
+To retrieve the external service IP (ClusterType: loadBalancer is required) of the Caddy server (which acts as the front-end for Lightwalletd), run the following command:
+
+  kubectl get svc {{ .Release.Name }}-caddy -n {{ .Release.Namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+
+Once you have obtained the IP address from the above command, you will need to update your DNS records. Specifically, create or update an A record for your domain "{{ .Values.caddy.domain }}" to point to the retrieved IP address.
+{{- end }}
+
+
+NOTE:
+{{- if or .Values.caddy.enabled }}
+You may need to wait a moment before running these commands, as your cluster needs time to acquire the public IP.
+{{- end }}

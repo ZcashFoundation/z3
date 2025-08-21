@@ -1,0 +1,31 @@
+zebra:
+  enabled: True
+  name: zebra
+  testnet: false
+  image:
+    repository: zfnd/zebra
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  additionalEnv: {}
+  volumes:
+    data:
+      size: 400Gi
+      storageClass: default
+  service:
+    type: ClusterIP
+  resources:
+    requests:
+      cpu: 2
+      memory: 4Gi
+    limits:
+      memory: 16Gi
+
+## TODO:
+zaino:
+zallet:
+
+rpc:
+  credentials:
+    rpcUser: 5s3rn4m3
+    rpcPassword: s3cr3tp4ssw0rd

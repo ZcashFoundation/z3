@@ -1,0 +1,36 @@
+apiVersion: v2
+name: z3-stack
+description: A Helm chart to deploy the z3 ecosystem on Kubernetes.
+type: application
+version: 0.0.1
+appVersion: "0.0.1"
+
+icon: https://zfnd.org/wp-content/uploads/2021/12/logo.svg
+home: https://zfnd.org
+sources:
+  - https://github.com/z3
+
+maintainers:
+  - name: Electric Coin Company
+    email: support@electriccoin.co
+
+keywords:
+  - zcash
+  - blockchain
+  - cryptocurrency
+  - helm
+  - kubernetes
+  - z3
+
+annotations:
+  artifacthub.io/description: "A Helm chart for deploying z3 ecosystem on Kubernetes."
+  artifacthub.io/license: "MIT"
+  artifacthub.io/source-url: https://github.com/ZcashFoundation/z3"
+  artifacthub.io/website-url: "https://electriccoin.co"
+  artifacthub.io/display-name: "z3 Stack"
+  artifacthub.io/version: "1.0.3"
+  artifacthub.io/changes: |
+    - Initial release of z3-Stack Helm chart
+  artifacthub.io/prerelease: "false"
+  artifacthub.io/kubeversion: ">=1.19.0"
+

@@ -1,0 +1,19 @@
+{{- if .Values.caddy.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-caddy
+spec:
+  selector:
+    app: {{ .Release.Name }}-caddy
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 80
+      name: http
+    - protocol: TCP
+      port: 443      # Puerto HTTPS
+      targetPort: 443
+      name: https
+  type: LoadBalancer
+{{- end }}

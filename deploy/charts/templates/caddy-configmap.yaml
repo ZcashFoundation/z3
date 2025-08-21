@@ -1,0 +1,12 @@
+{{- if .Values.caddy.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-caddy
+data:
+  Caddyfile: |
+    {{ .Values.caddy.domain }} {
+        reverse_proxy h2c://{{ .Values.zaino.name }}-svc-service:9067
+        tls {{ .Values.caddy.email }}
+    }
+{{- end }}

@@ -1,0 +1,15 @@
+{{- if .Values.zebra.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-{{ .Values.zebra.name }}
+spec:
+  type: {{ .Values.zebra.service.type }}
+  selector:
+    app: {{ .Values.zebra.name }}
+  ports:
+    - port: 8232
+      targetPort: 8232
+      protocol: TCP
+      name: rpc
+{{- end }}

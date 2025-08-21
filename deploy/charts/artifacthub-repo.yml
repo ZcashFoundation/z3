@@ -1,0 +1,6 @@
+repository:
+  name: z3-stack
+  displayName: z3 Stack Helm Chart
+  description: A Helm chart to deploy the z3 ecosystem on Kubernetes.
+  type: helm
+  url: https://github.com/ZcashFoundation/z3

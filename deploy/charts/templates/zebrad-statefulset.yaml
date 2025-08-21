@@ -1,0 +1,52 @@
+{{- if .Values.zebra.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-{{ .Values.zebra.name }}
+spec:
+  replicas: {{ .Values.zebra.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-{{ .Values.zebra.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-{{ .Values.zebra.name }}
+    spec:
+      securityContext:
+        runAsUser: 2001
+        runAsGroup: 2001
+        fsGroup: 2001
+        fsGroupChangePolicy: "OnRootMismatch"   # opcional (K8s >= 1.20)
+      containers:
+      - name: zebra
+        image: {{ .Values.zebra.image.repository }}:{{ .Values.zebra.image.tag }}
+        imagePullPolicy: {{ .Values.zebra.image.pullPolicy }}
+        env:
+        {{- with .Values.zebra.additionalEnv }}
+        {{- toYaml . | nindent 10 }}
+        {{- end }}
+        ports:
+        - containerPort: 8232
+          name: zebra-rpc
+        - containerPort: 8233
+          name: zebra-p2p
+        volumeMounts:
+        - name: {{ .Values.zebra.name }}-data
+          mountPath: /var/cache/zebrad-cache
+        resources:
+          {{- if .Values.zebra.resources }}
+          {{- toYaml .Values.zebra.resources | nindent 10 }}
+          {{- end }}
+  volumeClaimTemplates:
+  - metadata:
+      name: {{ .Values.zebra.name }}-data
+    spec:
+      accessModes: [ "ReadWriteMany" ]
+      resources:
+        requests:
+          storage: {{ .Values.zebra.volumes.data.size }}
+      {{- if .Values.zebra.volumes.data.storageClass }}
+      storageClassName: {{ .Values.zebra.volumes.data.storageClass }}
+      {{- end }}
+{{- end }}
