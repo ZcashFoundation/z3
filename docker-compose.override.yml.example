@@ -1,0 +1,29 @@
+# docker-compose.override.yml.example
+#
+# Development override for quick iteration without waiting for Zebra sync
+#
+# Usage:
+#   cp docker-compose.override.yml.example docker-compose.override.yml
+#   docker compose up -d
+#
+# This override changes Zebra's healthcheck from /ready to /healthy,
+# allowing dependent services (Zaino, Zallet) to start immediately
+# once Zebra has peer connections, without waiting for full sync.
+#
+# ⚠️  WARNING: Services may experience delays or errors while Zebra syncs
+# ⚠️  Only use for development/testing, NOT production
+#
+# For production or production-like testing, follow the two-phase deployment:
+#   1. docker compose up -d zebra     # Sync Zebra first
+#   2. docker compose up -d            # Start full stack
+
+services:
+  zebra:
+    healthcheck:
+      # Use /healthy (has peers) instead of /ready (synced to tip)
+      # Allows Zaino and Zallet to start immediately
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/healthy || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

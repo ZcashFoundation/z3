@@ -23,6 +23,24 @@ on:
       - '.github/workflows/build-z3-images.yaml'
 
 jobs:
+  build-zebra:
+    name: Build zebra Docker
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      packages: 'write'
+    uses: ./.github/workflows/sub-build-docker-image.yaml
+    with:
+      repository: ZcashFoundation/zebra
+      ref: 'main'
+      dockerfile_path: ./docker/Dockerfile
+      dockerfile_target: runtime
+      image_name: zebra
+      no_cache: ${{ inputs.no_cache || false }}
+      rust_backtrace: full
+      rust_lib_backtrace: full
+      rust_log: info
+
   build-zaino:
     name: Build zaino Docker
     permissions:
@@ -31,9 +49,9 @@ jobs:
       packages: 'write'
     uses: ./.github/workflows/sub-build-docker-image.yaml
     with:
-      repository: gustavovalverde/zaino
-      ref: 'imp-dockerfile'
-      dockerfile_path: ./docker/Dockerfile
+      repository: zingolabs/zaino
+      ref: 'dev'
+      dockerfile_path: ./Dockerfile
       dockerfile_target: runtime
       image_name: zaino
       no_cache: ${{ inputs.no_cache || false }}
@@ -49,9 +67,9 @@ jobs:
       packages: 'write'
     uses: ./.github/workflows/sub-build-docker-image.yaml
     with:
-      repository: gustavovalverde/wallet
-      ref: 'feat-add-docker'
-      dockerfile_path: ./docker/Dockerfile
+      repository: zcash/wallet
+      ref: 'main'
+      dockerfile_path: ./Dockerfile
       dockerfile_target: runtime
       image_name: zallet
       no_cache: ${{ inputs.no_cache || false }}
