@@ -2,6 +2,30 @@
 
 This project orchestrates Zebra, Zaino, and Zallet to provide a modern, modular Zcash software stack, intended to replace the legacy `zcashd`.
 
+## Quick Start (TLDR)
+
+For experienced users who know Docker and blockchain nodes:
+
+```bash
+# 1. Clone and setup
+git clone https://github.com/ZcashFoundation/z3 && cd z3
+git submodule update --init --recursive
+openssl req -x509 -newkey rsa:4096 -keyout config/tls/zaino.key -out config/tls/zaino.crt -sha256 -days 365 -nodes -subj "/CN=localhost"
+rage-keygen -o config/zallet_identity.txt
+
+# 2. Review config/zallet.toml (update network: "main" or "test")
+# 3. Review .env file (already configured with defaults)
+
+# 4. Start Zebra and wait for sync (24-72h for mainnet, 2-12h for testnet)
+docker compose up -d zebra
+# Wait until: curl http://localhost:8080/ready returns "ok"
+
+# 5. Start full stack
+docker compose up -d
+```
+
+**First time?** Read the full [Setup](#setup) and [Running the Stack](#running-the-stack) sections below.
+
 ## ⚠️ Important: Docker Images Notice
 
 **This repository builds and hosts Docker images for testing purposes only.**
@@ -46,93 +70,45 @@ Before you begin, ensure you have the following installed:
 
     The Docker Compose setup builds all images locally from submodules by default.
 
-2. **Configuration Directories:**
+2. **Required Files:**
 
-    After cloning the repository, you will find the following configuration directories, which are tracked by Git and will be populated with essential files in subsequent steps:
-
-    *   `config/`: This directory is intended to hold user-generated files that are essential for the Z3 stack's operation. Specifically, you will place:
-        *   `zallet_identity.txt` (Zallet age identity file for encryption - _you will generate this in a later step_).
-    *   `config/tls/`: This subdirectory is for TLS certificate files that you will generate:
-        *   `zaino.crt` (Zaino's TLS certificate - _you will generate this_)
-        *   `zaino.key` (Zaino's TLS private key - _you will generate this_)
+    You'll need to generate these files in the `config/` directory:
+    - `config/tls/zaino.crt` and `config/tls/zaino.key` - Zaino TLS certificates
+    - `config/zallet_identity.txt` - Zallet encryption key
+    - `config/zallet.toml` - Zallet configuration (provided, review and customize)
 
 3. **Generate Zaino TLS Certificates:**
-
-    Zaino requires a TLS certificate and private key for its gRPC interface. These files should be placed in the `config/tls/` directory.
-
-    * `config/tls/zaino.crt`: The TLS certificate for Zaino.
-    * `config/tls/zaino.key`: The private key for Zaino's TLS certificate.
-
-    You will need to generate these files using your preferred method (e.g., OpenSSL). For example, to generate a self-signed certificate:
 
     ```bash
     openssl req -x509 -newkey rsa:4096 -keyout config/tls/zaino.key -out config/tls/zaino.crt -sha256 -days 365 -nodes -subj "/CN=localhost" -addext "subjectAltName = DNS:localhost,IP:127.0.0.1"
     ```
 
-    **Note:** For production or more secure setups, use certificates issued by a trusted Certificate Authority (CA). The example above creates a self-signed certificate valid for 365 days and includes `localhost` and `127.0.0.1` as Subject Alternative Names (SANs), which is important for client validation.
+    This creates a self-signed certificate valid for 365 days. For production, use certificates from a trusted CA.
 
 4. **Generate Zallet Identity File:**
-
-    Zallet requires an `age` identity file for wallet encryption. Generate this file using `rage-keygen`:
 
     ```bash
     rage-keygen -o config/zallet_identity.txt
     ```
 
-    This will create `config/zallet_identity.txt`. **Securely back up this file and its corresponding public key.** The public key will be printed to your terminal during generation.
+    **Securely back up this file and the public key** (printed to terminal).
 
-5. **Understanding the Variable Hierarchy:**
+5. **Review Zallet Configuration:**
 
-    The Z3 stack uses a **three-tier variable naming system** to avoid collisions and organize configuration clearly:
+    Review `config/zallet.toml` and update the network setting:
+    - For mainnet: `network = "main"` in `[consensus]` section
+    - For testnet: `network = "test"` in `[consensus]` section
 
-    **1. Z3_* Variables (Infrastructure)**
-    - Used **only** in `docker-compose.yml` for Docker-level configuration (volume paths, port mappings, service discovery)
-    - **Never** directly passed to containers (unless explicitly remapped)
-    - Examples: `Z3_ZEBRA_DATA_PATH`, `Z3_ZEBRA_RPC_PORT`, `Z3_ZEBRA_RUST_LOG`
-    - Why? Prevents collision with service configuration variables
+    See [Configuration Guide](#configuration-guide) for details on Zallet's architecture and config requirements.
 
-    **2. Shared Variables (Common Configuration)**
-    - Used by multiple services, remapped in `docker-compose.yml`
-    - Examples: `NETWORK_NAME`, `ENABLE_COOKIE_AUTH`, `COOKIE_AUTH_FILE_DIR`
-    - These are transformed to service-specific variable names (e.g., `NETWORK_NAME` → `ZAINO_NETWORK`)
+6. **Review Environment Variables:**
 
-    **3. Service Configuration Variables (Application Config)**
-    - Passed directly to applications via `env_file` in `docker-compose.yml`
-    - **Zebra**: `ZEBRA_*` (config-rs format: `ZEBRA_SECTION__KEY` uses `__` between section and key)
-    - **Zaino**: `ZAINO_*`
-    - **Zallet**: `ZALLET_*`
+    A comprehensive `.env` file is provided with sensible defaults. Review and customize as needed:
+    - `NETWORK_NAME` - Set to `Mainnet` or `Testnet`
+    - Log levels for each service (defaults to `info` with warning filters)
+    - Port mappings (defaults work for most setups)
 
-    You do not need to create or modify separate `.toml` configuration files; the environment variables are the sole interface for customization. See the `.env` file header for detailed examples of variable flow.
-
-6. **Create `.env` File for Docker Compose:**
-
-    The `docker-compose.yml` file is configured to load environment variables from a `.env` file located in the `z3/` directory. This file is essential for customizing network settings, ports, log levels, and feature flags without modifying the `docker-compose.yml` directly.
-
-    Create a `z3/.env` file. You can use the example content below as a starting point, adapting it to your needs. Refer to the comments within the example `z3/.env` or the `docker-compose.yml` for variable details.
-    A comprehensive example `z3/.env` can be found alongside `docker-compose.yml`. Key variables include:
-
-    ```env
-    # z3/.env Example Snippet
-
-    # Shared configuration (mapped per service in docker-compose.yml)
-    NETWORK_NAME=Testnet
-    ENABLE_COOKIE_AUTH=true
-    COOKIE_AUTH_FILE_DIR=/var/run/auth
-
-    # Zebra infrastructure and service config
-    Z3_ZEBRA_RUST_LOG=info
-    Z3_ZEBRA_RPC_PORT=18232
-    ZEBRA_RPC__LISTEN_ADDR=0.0.0.0:18232
-
-    # Zaino service config
-    ZAINO_RUST_LOG=trace,hyper=info
-    ZAINO_GRPC_PORT=8137
-    ZAINO_GRPC_TLS_ENABLE=true
-
-    # Zallet service config
-    ZALLET_RUST_LOG=debug
-    ZALLET_HOST_RPC_PORT=28232
-    ```
+    See [Configuration Guide](#configuration-guide) for the complete variable hierarchy and customization options.
 
 ## Running the Stack
 
@@ -164,6 +140,17 @@ docker compose up -d zebra
 # Monitor sync progress (choose one)
 docker compose logs -f zebra                    # View logs
 watch curl -s http://localhost:8080/ready       # Poll readiness endpoint
+
+# Or use this script to wait until Zebra is ready:
+while true; do
+  response=$(curl -s http://127.0.0.1:8080/ready)
+  if [ "$response" = "ok" ]; then
+    echo "Zebra is ready!"
+    break
+  fi
+  echo "Not ready yet: $response"
+  sleep 5
+done
 
 # Zebra is ready when /ready returns "ok"
 ```
@@ -287,24 +274,127 @@ Each service runs as a specific non-root user with distinct UIDs/GIDs:
 - Permissions must be 700 (owner only) or 750 (owner + group read)
 - **Never use 755 or 777** - these expose your blockchain data and wallet to other users
 
-## Configuration Details
+## Configuration Guide
 
-Understanding how configuration is applied is key to customizing the Z3 stack. For the variable hierarchy (Z3_*, shared, and service-specific variables), see **Setup section 5**.
+This section explains how the Z3 stack is configured and how to customize it for your needs.
 
-### Configuration Layers
+### Configuration Overview
 
-* **Internal Service Defaults:** Each service (Zebra, Zaino, Zallet) has built-in default configuration values used unless overridden by environment variables. You do not need to create TOML configuration files for general operational parameters.
+The Z3 stack uses a layered configuration approach:
 
-* **Environment Variables (`z3/.env`):** This is the **exclusive method for customizing operational parameters.** Variables are passed to containers via `env_file` (direct pass-through) or `environment` (remapping/construction) in `docker-compose.yml`.
+1. **Service Defaults** - Built-in defaults for each service
+2. **Environment Variables** (`.env`) - Runtime configuration and customization
+3. **Configuration Files** - Required for specific services (Zallet, Zaino TLS)
+4. **Docker Compose Remapping** - Transforms variables for service-specific formats
 
-* **Explicitly Mounted Files & Docker Configs:** Note that specific files *are* sourced from your `z3/config/` directory for distinct purposes, such as `zallet_identity.txt` (volume mounted for Zallet) and the TLS certificates in `z3/config/tls/` (used via Docker `configs` for Zaino). These are for providing essential data or credentials, separate from the environment variable-based parameter tuning.
+### Variable Hierarchy
 
-* **Docker Compose Remapping (`docker-compose.yml`):** The `environment` section within each service definition is used to:
-  * **Remap infrastructure variables:** Maps `Z3_*` variables to service-specific names (e.g., `Z3_ZEBRA_RUST_LOG` → `RUST_LOG`)
-  * **Remap shared variables:** Maps common config to service-specific names (e.g., `NETWORK_NAME` → `ZAINO_NETWORK`, `ENABLE_COOKIE_AUTH` → `ZEBRA_RPC__ENABLE_COOKIE_AUTH`)
-  * **Service Discovery:** Constructs connection strings using infrastructure variables (e.g., `ZAINO_VALIDATOR_LISTEN_ADDRESS=zebra:${Z3_ZEBRA_RPC_PORT}`)
+The Z3 stack uses a **three-tier variable naming system** to avoid collisions:
 
-  Variables in the `environment` section override those from `env_file` if there's a conflict.
+**1. Z3_* Variables (Infrastructure)**
+- Purpose: Docker-level configuration (volume paths, port mappings, service discovery)
+- Scope: Used only in `docker-compose.yml`, never passed directly to containers
+- Examples: `Z3_ZEBRA_DATA_PATH`, `Z3_ZEBRA_RPC_PORT`, `Z3_ZEBRA_RUST_LOG`
+- Why: Prevents collision with service configuration variables
+
+**2. Shared Variables (Common Configuration)**
+- Purpose: Settings used by multiple services
+- Scope: Remapped in `docker-compose.yml` to service-specific names
+- Examples:
+  - `NETWORK_NAME` → `ZEBRA_NETWORK__NETWORK`, `ZAINO_NETWORK`, `ZALLET_NETWORK`
+  - `ENABLE_COOKIE_AUTH` → `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZAINO_VALIDATOR_COOKIE_AUTH`
+  - `COOKIE_AUTH_FILE_DIR` → Mapped to cookie paths for each service
+
+**3. Service Configuration Variables (Application Config)**
+- Purpose: Service-specific configuration passed to applications
+- Scope: Passed via `env_file` in `docker-compose.yml`
+- Formats:
+  - **Zebra**: `ZEBRA_*` (config-rs format: `ZEBRA_SECTION__KEY` with `__` separator)
+  - **Zaino**: `ZAINO_*`
+  - **Zallet**: `ZALLET_*`
+
+### Configuration Approaches by Service
+
+**Zebra:**
+- **Method**: Pure environment variables
+- **Format**: `ZEBRA_SECTION__KEY` (e.g., `ZEBRA_RPC__LISTEN_ADDR`)
+- **Files**: None required (uses environment variables only)
+
+**Zaino:**
+- **Method**: Pure environment variables
+- **Format**: `ZAINO_*` (e.g., `ZAINO_GRPC_PORT`)
+- **Files**: TLS certificates (`config/tls/zaino.crt`, `config/tls/zaino.key`)
+
+**Zallet:**
+- **Method**: Hybrid (TOML file + environment variables)
+- **Format**: `ZALLET_*` for runtime parameters (e.g., `ZALLET_RUST_LOG`)
+- **Files**:
+  - `config/zallet.toml` - Core configuration (required)
+  - `config/zallet_identity.txt` - Encryption key (required)
+
+### Zallet's Architecture
+
+Zallet differs from Zebra and Zaino in key ways:
+
+**Embedded Indexer:**
+- Zallet includes an **embedded indexer** that connects directly to **Zebra's JSON-RPC** endpoint
+- It does NOT use Zaino's indexer service
+- It fetches blockchain data directly from Zebra
+
+**Service Connectivity:**
+```
+Zebra (JSON-RPC :18232)
+  ├─→ Zaino (indexes blocks via JSON-RPC)
+  └─→ Zallet (embedded indexer via JSON-RPC)
+```
+
+**Critical Configuration Requirements:**
+1. `config/zallet.toml` must exist with all required sections (even if empty)
+2. `validator_address` must point to `zebra:18232` (Zebra's JSON-RPC), **NOT** `zaino:8137`
+3. All TOML sections must be present: `[builder]`, `[consensus]`, `[database]`, `[external]`, `[features]`, `[indexer]`, `[keystore]`, `[note_management]`, `[rpc]`
+4. Cookie authentication must be configured in both TOML and mounted as a volume
+
+### Common Customizations
+
+**Change Network (Mainnet/Testnet):**
+```bash
+# In .env:
+NETWORK_NAME=Mainnet  # or Testnet
+
+# In config/zallet.toml:
+[consensus]
+network = "main"  # or "test"
+```
+
+**Adjust Log Levels:**
+```bash
+# In .env:
+Z3_ZEBRA_RUST_LOG=info
+ZAINO_RUST_LOG=info,reqwest=warn,hyper_util=warn
+ZALLET_RUST_LOG=info,hyper_util=warn,reqwest=warn
+
+# For debugging, use:
+ZAINO_RUST_LOG=debug
+```
+
+**Change Ports:**
+```bash
+# In .env:
+Z3_ZEBRA_HOST_RPC_PORT=18232
+ZAINO_HOST_GRPC_PORT=8137
+ZALLET_HOST_RPC_PORT=28232
+```
+
+**Environment Variable Precedence:**
+
+Docker Compose applies variables in this order (later overrides earlier):
+1. Dockerfile defaults
+2. `.env` file substitution (e.g., `${VARIABLE}`)
+3. `env_file` section
+4. `environment` section
+5. Shell environment variables (if exported)
+
+**Important**: If you export a variable in your shell, it will override the `.env` file. Use `unset VARIABLE` to remove shell variables.
 
 ## Health and Readiness Checks
 
