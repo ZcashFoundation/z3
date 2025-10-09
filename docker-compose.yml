@@ -1,9 +1,8 @@
 services:
   zebra:
-    # Using local submodule build (recommended for testing/development)
-    # Pre-built images from ghcr.io use unstable branches - NOT for production
-    # See README.md "Docker Images Notice" for details
+    # Local submodule build (recommended for testing/development)
     # For production, use official releases: docker.io/zfnd/zebra:latest
+    # See README.md "Docker Images Notice" for details
     build:
       context: ./zebra
       dockerfile: docker/Dockerfile
@@ -14,16 +13,14 @@ services:
     env_file:
       - ./.env
     environment:
-      # Remap infrastructure and shared variables to Zebra config format
       - RUST_LOG=${Z3_ZEBRA_RUST_LOG}
       - ZEBRA_NETWORK__NETWORK=${NETWORK_NAME}
       - ZEBRA_RPC__ENABLE_COOKIE_AUTH=${ENABLE_COOKIE_AUTH}
       - ZEBRA_RPC__COOKIE_DIR=${COOKIE_AUTH_FILE_DIR}
     volumes:
-      # Use Z3_ZEBRA_DATA_PATH (defaults to named volume 'zebra_data')
-      # To use local directory, set in .env: Z3_ZEBRA_DATA_PATH=./local/zebra-cache
+      # Blockchain state (defaults to named volume 'zebra_data')
       - ${Z3_ZEBRA_DATA_PATH}:/home/zebra/.cache/zebra
-      # Use Z3_COOKIE_PATH (defaults to named volume 'shared_cookie_volume')
+      # Cookie authentication shared with Zaino and Zallet
       - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}
     ports:
       - "${Z3_ZEBRA_HOST_RPC_PORT}:${Z3_ZEBRA_RPC_PORT}"
@@ -31,27 +28,24 @@ services:
     networks:
       - z3_net
     healthcheck:
-      # Checks if Zebra is synced near network tip (default: within 2 blocks)
-      # IMPORTANT: For fresh sync, run 'docker compose up -d zebra' first
-      # Wait for Zebra to sync (check with 'curl localhost:8080/ready')
-      # Then run 'docker compose up -d' to start full stack
+      # Verifies Zebra is synced near network tip (default: within 2 blocks)
+      # For fresh sync: run 'docker compose up -d zebra' first, wait for sync,
+      # then run 'docker compose up -d' to start full stack
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 90s  # grace period for cached state resume
+      start_period: 90s
 
   zaino:
-    # Using local submodule build (recommended for testing/development)
-    # Pre-built images from ghcr.io use unstable branches - NOT for production
+    # Local submodule build (recommended for testing/development)
+    # For production, use official releases when available
     # See README.md "Docker Images Notice" for details
-    # image: ghcr.io/zcashfoundation/zaino:latest  # Testing only - unstable dev branch
     build:
       context: ./zaino
       dockerfile: Dockerfile
     container_name: z3_zaino
     restart: unless-stopped
-    # platform: linux/amd64
     depends_on:
       zebra:
         condition: service_healthy
@@ -61,38 +55,34 @@ services:
       - RUST_LOG=${ZAINO_RUST_LOG}
       - RUST_BACKTRACE=${ZAINO_RUST_BACKTRACE}
       - ZAINO_NETWORK=${NETWORK_NAME}
-      # Connect to Zebra service using its name and port, cookie auth will be used if enabled globally.
+      # Zebra connection and authentication
       - ZAINO_VALIDATOR_LISTEN_ADDRESS=zebra:${Z3_ZEBRA_RPC_PORT}
-      # This assignment enables cookie auth for Zaino if ENABLE_COOKIE_AUTH is true
-      # AND its ZAINO_VALIDATOR_LISTEN_ADDRESS is non-loopback (which 'zebra:${Z3_ZEBRA_RPC_PORT}' is).
       - ZAINO_VALIDATOR_COOKIE_AUTH=${ENABLE_COOKIE_AUTH}
-      - ZAINO_VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie # Zaino reads the cookie from this specific path
-      # Zaino's own RPC services
+      - ZAINO_VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie
+      # Zaino RPC services
       - ZAINO_GRPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
       - ZAINO_JSON_RPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_JSON_RPC_PORT}
-      # Zaino TLS configuration (required for external addresses)
+      # TLS configuration
       - ZAINO_GRPC_TLS=${ZAINO_GRPC_TLS_ENABLE}
       - ZAINO_TLS_CERT_PATH=${ZAINO_GRPC_TLS_CERT_PATH}
       - ZAINO_TLS_KEY_PATH=${ZAINO_GRPC_TLS_KEY_PATH}
     volumes:
-      # Use Z3_ZAINO_DATA_PATH (defaults to named volume 'zaino_data')
-      # To use local directory, set in .env: Z3_ZAINO_DATA_PATH=./local/zaino-data
+      # Indexer state (defaults to named volume 'zaino_data')
       - ${Z3_ZAINO_DATA_PATH}:/home/zaino/.cache/zaino
-      # Use Z3_COOKIE_PATH (defaults to named volume 'shared_cookie_volume')
-      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro # Zaino reads the cookie read-only
+      # Cookie authentication
+      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
     configs:
-      - source: zaino_tls_cert     # Use the top-level config for Zaino's cert
-        target: ${ZAINO_GRPC_TLS_CERT_PATH}    # Mount path inside container, FHS compliant via env var
-      - source: zaino_tls_key      # Use the top-level config for Zaino's key
-        target: ${ZAINO_GRPC_TLS_KEY_PATH}     # Mount path inside container, FHS compliant via env var
+      - source: zaino_tls_cert
+        target: ${ZAINO_GRPC_TLS_CERT_PATH}
+      - source: zaino_tls_key
+        target: ${ZAINO_GRPC_TLS_KEY_PATH}
     ports:
       - "${ZAINO_HOST_GRPC_PORT}:${ZAINO_GRPC_PORT}"
       - "${ZAINO_HOST_JSONRPC_PORT}:${ZAINO_JSON_RPC_PORT}"
     networks:
       - z3_net
     healthcheck:
-      # Check if Zaino binary is responsive (gRPC cannot be curled directly)
-      # Uses the same check as Dockerfile's HEALTHCHECK for consistency
+      # Process check (gRPC cannot be directly curled)
       test: ["CMD-SHELL", "/usr/local/bin/zainod --version >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 5s
@@ -100,17 +90,15 @@ services:
       start_period: 60s
 
   zallet:
-    # Using local submodule build (recommended for testing/development)
-    # Pre-built images from ghcr.io use unstable branches - NOT for production
+    # Local submodule build (recommended for testing/development)
+    # For production, use official releases when available
     # See README.md "Docker Images Notice" for details
-    # image: ghcr.io/zcashfoundation/zallet:latest  # Testing only - unstable main branch
     build:
       context: ./zallet
       dockerfile: Dockerfile
     container_name: z3_zallet
     restart: unless-stopped
-    # platform: linux/amd64
-    user: "65532:65532"  # nonroot user from distroless (matches Dockerfile USER nonroot)
+    user: "65532:65532"
     command: ["--datadir", "/var/lib/zallet", "start"]
     depends_on:
       zaino:
@@ -120,20 +108,15 @@ services:
     environment:
       - RUST_LOG=${ZALLET_RUST_LOG}
       - ZALLET_NETWORK=${NETWORK_NAME}
-      # Zallet indexer points to Zaino's gRPC service (hosted at 'zaino:${ZAINO_GRPC_PORT}').
-      # TLS for this connection needs to be handled by Zallet (e.g., trusting Zaino's cert).
-      # Refer to .env for potential CA path configuration if needed.
-      - ZALLET_INDEXER_VALIDATOR_ADDRESS=zaino:${ZAINO_GRPC_PORT}
       - ZALLET_RPC_BIND=0.0.0.0:${ZALLET_RPC_PORT}
     volumes:
-      # Use Z3_ZALLET_DATA_PATH (defaults to named volume 'zallet_data')
-      # To use local directory, set in .env: Z3_ZALLET_DATA_PATH=./local/zallet-data
-      # Mounted to /var/lib/zallet (Dockerfile WORKDIR, writable by nonroot user UID 65532)
+      # Wallet database (defaults to named volume 'zallet_data')
       - ${Z3_ZALLET_DATA_PATH}:/var/lib/zallet
-      # Mount configuration files from ./config/ (read-only)
+      # Cookie authentication for Zebra access
+      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
+      # Configuration files
       - ./config/zallet.toml:/var/lib/zallet/zallet.toml:ro
       - ./config/zallet_identity.txt:/var/lib/zallet/identity.txt:ro
-      # - ./config/tls/zaino.crt:/tls_trusted/zaino.crt:ro # Example mount for Zallet to trust Zaino
     ports:
       - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
     networks:
@@ -146,7 +129,7 @@ volumes:
   zebra_data:
   zaino_data:
   zallet_data:
-  shared_cookie_volume: {} # Define the shared volume for the cookie
+  shared_cookie_volume:
 
 networks:
   z3_net:
@@ -154,6 +137,6 @@ networks:
 
 configs:
   zaino_tls_cert:
-    file: ./config/tls/zaino.crt # Path on the host for Zaino's TLS cert
+    file: ./config/tls/zaino.crt
   zaino_tls_key:
-    file: ./config/tls/zaino.key   # Path on the host for Zaino's TLS key
+    file: ./config/tls/zaino.key

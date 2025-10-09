@@ -29,9 +29,14 @@ as_of_version = "0.1.0-alpha.1"
 # No experimental features enabled
 
 [indexer]
-# Connect to Zaino gRPC service
-# This is set via docker-compose service name 'zaino' and ZAINO_GRPC_PORT
-validator_address = "zaino:8137"
+# Connect to Zebra's JSON-RPC endpoint
+# Zallet's embedded indexer fetches blockchain data from Zebra
+# Service name 'zebra' and port from Z3_ZEBRA_RPC_PORT in .env
+validator_address = "zebra:18232"
+
+# Cookie authentication (matches Zebra's ENABLE_COOKIE_AUTH=true)
+validator_cookie_auth = true
+validator_cookie_path = "/var/run/auth/.cookie"
 
 [keystore]
 # Age encryption identity file (mounted from ./config/zallet_identity.txt)
