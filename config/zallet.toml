@@ -1,0 +1,47 @@
+# Zallet Configuration for Z3 Stack
+#
+# This config connects Zallet to the Zaino indexer in the Z3 stack.
+# For full configuration options, run: zallet example-config
+
+[builder]
+# Transaction builder settings - using defaults
+
+[builder.limits]
+# Transaction limits - using defaults
+
+[consensus]
+# Network must match NETWORK_NAME in .env (Mainnet/Testnet)
+network = "main"
+
+[database]
+# Wallet database - using defaults (wallet.db in datadir)
+
+[external]
+# External settings - using defaults
+
+[features]
+as_of_version = "0.1.0-alpha.1"
+
+[features.deprecated]
+# No deprecated features enabled
+
+[features.experimental]
+# No experimental features enabled
+
+[indexer]
+# Connect to Zaino gRPC service
+# This is set via docker-compose service name 'zaino' and ZAINO_GRPC_PORT
+validator_address = "zaino:8137"
+
+[keystore]
+# Age encryption identity file (mounted from ./config/zallet_identity.txt)
+encryption_identity = "identity.txt"
+
+[note_management]
+# Note management - using defaults
+
+[rpc]
+# RPC server configuration
+# Bind address is set via ZALLET_RPC_BIND environment variable in docker-compose
+bind = ["0.0.0.0:28232"]
+timeout = 30

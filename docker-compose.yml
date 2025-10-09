@@ -91,19 +91,12 @@ services:
     networks:
       - z3_net
     healthcheck:
-      # Check if Zaino gRPC is responding (not if Zebra is synced)
-      # Conditionally uses http or https based on ZAINO_GRPC_TLS_ENABLE
-      test:
-        - CMD-SHELL
-        - |
-          if [ "$${ZAINO_GRPC_TLS_ENABLE}" = "true" ]; then
-            curl -f -k https://127.0.0.1:$${ZAINO_GRPC_PORT} || exit 1
-          else
-            curl -f http://127.0.0.1:$${ZAINO_GRPC_PORT} || exit 1
-          fi
+      # Check if Zaino binary is responsive (gRPC cannot be curled directly)
+      # Uses the same check as Dockerfile's HEALTHCHECK for consistency
+      test: ["CMD-SHELL", "/usr/local/bin/zainod --version >/dev/null 2>&1 || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
+      timeout: 5s
+      retries: 3
       start_period: 60s
 
   zallet:
@@ -117,6 +110,8 @@ services:
     container_name: z3_zallet
     restart: unless-stopped
     # platform: linux/amd64
+    user: "65532:65532"  # nonroot user from distroless (matches Dockerfile USER nonroot)
+    command: ["--datadir", "/var/lib/zallet", "start"]
     depends_on:
       zaino:
         condition: service_healthy
@@ -133,21 +128,19 @@ services:
     volumes:
       # Use Z3_ZALLET_DATA_PATH (defaults to named volume 'zallet_data')
       # To use local directory, set in .env: Z3_ZALLET_DATA_PATH=./local/zallet-data
-      - ${Z3_ZALLET_DATA_PATH}:/home/zallet/.data
-      - ./config/zallet_identity.txt:/home/zallet/.data/identity.txt:ro 
+      # Mounted to /var/lib/zallet (Dockerfile WORKDIR, writable by nonroot user UID 65532)
+      - ${Z3_ZALLET_DATA_PATH}:/var/lib/zallet
+      # Mount configuration files from ./config/ (read-only)
+      - ./config/zallet.toml:/var/lib/zallet/zallet.toml:ro
+      - ./config/zallet_identity.txt:/var/lib/zallet/identity.txt:ro
       # - ./config/tls/zaino.crt:/tls_trusted/zaino.crt:ro # Example mount for Zallet to trust Zaino
     ports:
       - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
     networks:
       - z3_net
-    healthcheck:
-      # Check if Zallet RPC is responding (not if Zaino is fully synced)
-      # Zallet can start and wait for Zaino to provide indexed data
-      test: ["CMD-SHELL", "curl -s -f --data-binary '{\"jsonrpc\": \"2.0\", \"id\":\"healthcheck\", \"method\": \"help\", \"params\": [] }' -H 'Content-Type: application/json' http://127.0.0.1:${ZALLET_RPC_PORT}/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+    # NOTE: Healthcheck disabled - distroless image has no shell/curl
+    # Zallet will restart automatically if it crashes (restart: unless-stopped)
+    # Monitor logs or use external monitoring for service health
 
 volumes:
   zebra_data:

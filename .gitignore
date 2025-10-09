@@ -18,6 +18,7 @@ target/
 
 # Ignore all contents of the 'config' directory recursively
 config/**
+!config/zallet.toml
 
 # Un-ignore the 'tls' subdirectory itself, so we can look inside it
 !config/tls/
