@@ -59,23 +59,23 @@ DIR_PATH="$2"
 # Validate service
 case "$SERVICE" in
     zebra)
-        UID=$ZEBRA_UID
-        GID=$ZEBRA_GID
+        OWNER_UID=$ZEBRA_UID
+        OWNER_GID=$ZEBRA_GID
         PERMS=700
         ;;
     zaino)
-        UID=$ZAINO_UID
-        GID=$ZAINO_GID
+        OWNER_UID=$ZAINO_UID
+        OWNER_GID=$ZAINO_GID
         PERMS=700
         ;;
     zallet)
-        UID=$ZALLET_UID
-        GID=$ZALLET_GID
+        OWNER_UID=$ZALLET_UID
+        OWNER_GID=$ZALLET_GID
         PERMS=700
         ;;
     cookie)
-        UID=$ZEBRA_UID
-        GID=$ZEBRA_GID
+        OWNER_UID=$ZEBRA_UID
+        OWNER_GID=$ZEBRA_GID
         PERMS=750
         echo -e "${YELLOW}WARNING: Cookie directory has special requirements.${NC}"
         echo "Zaino (UID 1000) needs read access to Zebra's (UID 10001) cookie."
@@ -110,12 +110,12 @@ fi
 echo -e "${GREEN}Z3 Stack - Fixing Permissions${NC}"
 echo "Service:     $SERVICE"
 echo "Directory:   $DIR_PATH"
-echo "UID:GID:     $UID:$GID"
+echo "UID:GID:     ${OWNER_UID}:${OWNER_GID}"
 echo "Permissions: $PERMS"
 echo ""
 
 # Set ownership and permissions
-chown "$UID:$GID" "$DIR_PATH"
+chown "${OWNER_UID}:${OWNER_GID}" "$DIR_PATH"
 chmod "$PERMS" "$DIR_PATH"
 
 echo -e "${GREEN}✓ Permissions set successfully${NC}"
