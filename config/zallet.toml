@@ -1,6 +1,7 @@
 # Zallet Configuration for Z3 Stack
 #
-# This config connects Zallet to the Zaino indexer in the Z3 stack.
+# Zallet embeds Zaino's indexer libraries and connects to Zebra's JSON-RPC endpoint.
+# It does NOT connect to the standalone Zaino service (which is for gRPC clients).
 # For full configuration options, run: zallet example-config
 
 [builder]
@@ -29,9 +30,9 @@ as_of_version = "0.1.0-alpha.1"
 # No experimental features enabled
 
 [indexer]
-# Connect to Zebra's JSON-RPC endpoint
-# Zallet's embedded indexer fetches blockchain data from Zebra
-# Service name 'zebra' and port from Z3_ZEBRA_RPC_PORT in .env
+# Zallet's embedded Zaino indexer libraries connect to Zebra's JSON-RPC endpoint
+# to fetch blockchain data. The validator_address MUST point to Zebra (not the
+# standalone Zaino service). Service name 'zebra' and port from Z3_ZEBRA_RPC_PORT in .env
 validator_address = "zebra:18232"
 
 # Cookie authentication (matches Zebra's ENABLE_COOKIE_AUTH=true)

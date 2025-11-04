@@ -2,7 +2,33 @@
 
 This project orchestrates Zebra, Zaino, and Zallet to provide a modern, modular Zcash software stack, intended to replace the legacy `zcashd`.
 
+## Table of Contents
+
+- [Quick Start (TLDR)](#quick-start-tldr)
+- [Docker Images Notice](#-important-docker-images-notice)
+- [Prerequisites](#prerequisites)
+- [System Requirements](#system-requirements)
+  - [Minimum Specifications](#minimum-specifications)
+  - [Recommended Specifications](#recommended-specifications)
+  - [Sync Time Expectations](#sync-time-expectations)
+- [Setup](#setup)
+  - [Clone Repository](#1-clone-the-repository-and-submodules)
+  - [Platform Configuration (ARM64)](#2-platform-configuration-apple-silicon--arm64)
+  - [Required Files](#3-required-files)
+  - [Configuration Review](#6-review-zallet-configuration)
+- [Running the Stack](#running-the-stack)
+  - [Quick Start (Synced State)](#quick-start-synced-state)
+  - [Fresh Sync (First Time)](#fresh-sync-first-time-setup)
+  - [Development Mode](#development-mode-optional)
+- [Stopping the Stack](#stopping-the-stack)
+- [Data Storage & Volumes](#data-storage--volumes)
+- [Interacting with Services](#interacting-with-services)
+- [Configuration Guide](#configuration-guide)
+- [Health and Readiness Checks](#health-and-readiness-checks)
+
 ## Quick Start (TLDR)
+
+**Apple Silicon / ARM64 Users:** For 20x faster builds, enable native ARM64 support by setting `DOCKER_PLATFORM=linux/arm64` in `.env` (see [Platform Configuration](#2-platform-configuration-apple-silicon--arm64)).
 
 For experienced users who know Docker and blockchain nodes:
 
@@ -53,8 +79,43 @@ Before you begin, ensure you have the following installed:
 
 * **Docker Engine:** [Install Docker](https://docs.docker.com/engine/install/)
 * **Docker Compose:** (Usually included with Docker Desktop, or [install separately](https://docs.docker.com/compose/install/))
+* **Docker Permissions (Linux):** You may need to run Docker commands with `sudo`, or add your user to the `docker` group. See [Docker's post-installation steps](https://docs.docker.com/engine/install/linux-postinstall/#manage-docker-as-a-non-root-user) for details. Note that the `docker` group grants root-level privileges.
 * **rage:** For generating the Zallet identity file. Install from [str4d/rage releases](https://github.com/str4d/rage/releases) or build from source.
 * **Git:** For cloning the repositories and submodules.
+
+## System Requirements
+
+Running the full Z3 stack (Zebra + Zaino + Zallet) requires substantial hardware resources due to blockchain synchronization and indexing.
+
+### Minimum Specifications
+
+- **CPU:** 2 cores (4+ cores strongly recommended)
+- **RAM:** 4 GB for Zebra; 8+ GB recommended for full stack
+- **Disk Space:**
+  - Mainnet: 300 GB (blockchain state)
+  - Testnet: 30 GB (blockchain state)
+  - Additional space for Zaino indexer database (requirements under determination)
+  - SSD strongly recommended for sync performance
+- **Network:** Reliable internet connection
+  - Initial sync download: ~300 GB for mainnet
+  - Ongoing bandwidth: 10 MB - 10 GB per day
+
+### Recommended Specifications
+
+- **CPU:** 4+ cores
+- **RAM:** 16+ GB
+- **Disk Space:** 500+ GB with room for blockchain growth
+- **Network:** 100+ Mbps connection with ~300 GB/month bandwidth
+
+### Sync Time Expectations
+
+- **Mainnet:** 24-72 hours on recommended hardware
+- **Testnet:** 2-12 hours (currently ~3.1M blocks)
+- **Cached/Resumed:** Minutes (if using existing Zebra state)
+
+Sync time varies based on CPU speed, disk I/O (SSD vs HDD), and network bandwidth.
+
+**Note:** These specifications are based on [Zebra's official requirements](https://zebra.zfnd.org/user/requirements.html). Zaino indexer adds additional resource overhead; specific requirements are under determination. Running all three services together requires resources beyond Zebra alone.
 
 ## Setup
 
@@ -70,14 +131,42 @@ Before you begin, ensure you have the following installed:
 
     The Docker Compose setup builds all images locally from submodules by default.
 
-2. **Required Files:**
+2. **Platform Configuration (Apple Silicon / ARM64):**
+
+    **ARM64 users**: Enable native builds for dramatically faster performance.
+
+    Z3 defaults to AMD64 (x86_64) for development consistency. On ARM64 systems (Apple Silicon M1/M2/M3 or ARM64 Linux), this uses emulation which is **very slow**:
+    - AMD64 emulation: ~50 minutes to build Zebra
+    - Native ARM64: ~2-3 minutes to build Zebra
+
+    **To enable native ARM64 builds:**
+
+    Edit `.env` and uncomment the `DOCKER_PLATFORM` line:
+
+    ```bash
+    # In .env file, change this:
+    # DOCKER_PLATFORM=linux/arm64
+
+    # To this:
+    DOCKER_PLATFORM=linux/arm64
+    ```
+
+    Or set it directly in your shell:
+
+    ```bash
+    echo "DOCKER_PLATFORM=linux/arm64" >> .env
+    ```
+
+    **Intel/AMD users**: No action needed. Default AMD64 settings work optimally.
+
+3. **Required Files:**
 
     You'll need to generate these files in the `config/` directory:
     - `config/tls/zaino.crt` and `config/tls/zaino.key` - Zaino TLS certificates
     - `config/zallet_identity.txt` - Zallet encryption key
     - `config/zallet.toml` - Zallet configuration (provided, review and customize)
 
-3. **Generate Zaino TLS Certificates:**
+4. **Generate Zaino TLS Certificates:**
 
     ```bash
     openssl req -x509 -newkey rsa:4096 -keyout config/tls/zaino.key -out config/tls/zaino.crt -sha256 -days 365 -nodes -subj "/CN=localhost" -addext "subjectAltName = DNS:localhost,IP:127.0.0.1"
@@ -85,7 +174,7 @@ Before you begin, ensure you have the following installed:
 
     This creates a self-signed certificate valid for 365 days. For production, use certificates from a trusted CA.
 
-4. **Generate Zallet Identity File:**
+5. **Generate Zallet Identity File:**
 
     ```bash
     rage-keygen -o config/zallet_identity.txt
@@ -93,7 +182,7 @@ Before you begin, ensure you have the following installed:
 
     **Securely back up this file and the public key** (printed to terminal).
 
-5. **Review Zallet Configuration:**
+6. **Review Zallet Configuration:**
 
     Review `config/zallet.toml` and update the network setting:
     - For mainnet: `network = "main"` in `[consensus]` section
@@ -101,7 +190,7 @@ Before you begin, ensure you have the following installed:
 
     See [Configuration Guide](#configuration-guide) for details on Zallet's architecture and config requirements.
 
-6. **Review Environment Variables:**
+7. **Review Environment Variables:**
 
     A comprehensive `.env` file is provided with sensible defaults. Review and customize as needed:
     - `NETWORK_NAME` - Set to `Mainnet` or `Testnet`
@@ -155,10 +244,7 @@ done
 # Zebra is ready when /ready returns "ok"
 ```
 
-**How long will this take?**
-- **Mainnet**: 24-72 hours (depending on hardware and network)
-- **Testnet**: 2-12 hours (currently ~3.1M blocks)
-- **Cached/Resumed**: Minutes (if using existing Zebra state)
+**How long will this take?** See [Sync Time Expectations](#sync-time-expectations) for detailed estimates based on your hardware and network.
 
 #### Phase 2: Start Full Stack
 
@@ -336,16 +422,16 @@ The Z3 stack uses a **three-tier variable naming system** to avoid collisions:
 
 Zallet differs from Zebra and Zaino in key ways:
 
-**Embedded Indexer:**
-- Zallet includes an **embedded indexer** that connects directly to **Zebra's JSON-RPC** endpoint
-- It does NOT use Zaino's indexer service
-- It fetches blockchain data directly from Zebra
+**Embedded Zaino Indexer:**
+- Zallet embeds **Zaino's indexer libraries** (`zaino-fetch`, `zaino-state`, `zaino-proto`) as dependencies
+- This embedded indexer connects directly to **Zebra's JSON-RPC** endpoint to fetch blockchain data
+- Zallet does **NOT** connect to the standalone Zaino gRPC/JSON-RPC service (which is for other light clients)
 
 **Service Connectivity:**
 ```
 Zebra (JSON-RPC :18232)
-  ├─→ Zaino (indexes blocks via JSON-RPC)
-  └─→ Zallet (embedded indexer via JSON-RPC)
+  ├─→ Zaino Service (standalone indexer for gRPC clients like Zingo)
+  └─→ Zallet (uses embedded Zaino indexer libraries)
 ```
 
 **Critical Configuration Requirements:**

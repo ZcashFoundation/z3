@@ -9,7 +9,7 @@ services:
       target: runtime
     container_name: z3_zebra
     restart: unless-stopped
-    platform: linux/amd64
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     env_file:
       - ./.env
     environment:
