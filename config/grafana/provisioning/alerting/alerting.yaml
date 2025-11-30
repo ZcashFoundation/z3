@@ -1,0 +1,174 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: default_contact_point
+    receivers:
+      - uid: default_email_receiver
+        type: email
+        settings:
+          addresses: "example@example.com"
+
+policies:
+  - orgId: 1
+    receiver: default_contact_point
+    group_by: ['grafana_folder', 'alertname']
+
+groups:
+  - orgId: 1
+    name: Zebra Alerts
+    folder: Zebra
+    interval: 1m
+    rules:
+      - uid: low_peer_count
+        title: Low Peer Count
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: z3_prometheus
+            model:
+              editorMode: code
+              expr: zcash_net_peers
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: $B < 1
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: math
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          description: "Node has 0 peers. Check network connection."
+          summary: "Low Peer Count"
+        labels:
+          severity: critical
+      - uid: block_height_stalled
+        title: Block Height Stalled
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: z3_prometheus
+            model:
+              editorMode: code
+              expr: changes(zcash_chain_verified_block_height[15m])
+              instant: true
+              intervalMs: 1000
+              legendFormat: __auto
+              maxDataPoints: 43200
+              range: false
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params: []
+                    type: gt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - B
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: A
+              intervalMs: 1000
+              maxDataPoints: 43200
+              reducer: last
+              refId: B
+              type: reduce
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              conditions:
+                - evaluator:
+                    params:
+                      - 1
+                    type: lt
+                  operator:
+                    type: and
+                  query:
+                    params:
+                      - C
+                  reducer:
+                    params: []
+                    type: last
+                  type: query
+              datasource:
+                type: __expr__
+                uid: __expr__
+              expression: $B < 1
+              intervalMs: 1000
+              maxDataPoints: 43200
+              refId: C
+              type: math
+        noDataState: Alerting
+        execErrState: Error
+        for: 5m
+        annotations:
+          description: "Block height has not increased in the last 15 minutes. Node may be stuck."
+          summary: "Block Height Stalled"
+        labels:
+          severity: warning

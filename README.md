@@ -664,14 +664,15 @@ Refer to the individual component documentation for RPC API details.
 
 ## Monitoring
 
-The Z3 stack includes a pre-configured Grafana dashboard for monitoring the Zebra node.
+The Z3 stack includes a pre-configured Grafana dashboard for monitoring and alerting.
 
 ### Accessing the Dashboard
 
-- **URL:** [http://localhost:3000](http://localhost:3000)
-- **Default Credentials:**
-  - **User:** `admin`
-  - **Password:** `admin` (you will be prompted to change this on first login)
+1.  **Access Grafana:** Open your browser and navigate to `http://localhost:3000`.
+2.  **Login:**
+    -   **Username:** `admin`
+    -   **Password:** `admin`
+3.  **Change Password:** You will be prompted to change the password on your first login. This new password will be persisted in the `grafana_data` volume.
 
 ### Dashboard Features
 
@@ -681,6 +682,22 @@ The **Zebra Status** dashboard provides real-time visibility into:
 - **Network Health:** Inbound/Outbound traffic rates and P2P message volume.
 - **Consensus & Mempool:** Mempool transaction count/size and proof verification rates.
 - **Peer Analytics:** Distribution of connected peer user agents.
+
+### Alerting
+
+The dashboard includes basic alerts to notify you of critical issues:
+
+- **Low Peer Count:** Triggers if the node has 0 peers for 5 minutes.
+- **Block Height Stalled:** Triggers if the block height hasn't increased in 15 minutes.
+
+**Configuring Notifications:**
+
+The default alerts are configured via provisioning files. To receive notifications (e.g., via Email, Slack, PagerDuty), you must configure **Contact Points** in the Grafana UI:
+
+1.  Log in to Grafana (`http://localhost:3000`).
+2.  Go to **Alerting** -> **Contact points**.
+3.  Edit the `default_contact_point` or create a new one with your preferred integration (Email, Slack, etc.).
+4.  Go to **Alerting** -> **Notification policies** and ensure your contact point is selected as the default.
 
 > [!NOTE]
 > Currently, the dashboard only visualizes metrics from the **Zebra** node. Support for **Zaino** (indexer) and **Zallet** (wallet) metrics is planned for future updates.
