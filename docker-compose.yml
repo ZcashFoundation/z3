@@ -15,6 +15,7 @@ services:
       - ZEBRA_NETWORK__NETWORK=${NETWORK_NAME}
       - ZEBRA_RPC__ENABLE_COOKIE_AUTH=${ENABLE_COOKIE_AUTH}
       - ZEBRA_RPC__COOKIE_DIR=${COOKIE_AUTH_FILE_DIR}
+      - ZEBRA_METRICS__ENDPOINT_ADDR=${ZEBRA_METRICS__ENDPOINT_ADDR}
     volumes:
       # Blockchain state (defaults to named volume 'zebra_data')
       - ${Z3_ZEBRA_DATA_PATH}:/home/zebra/.cache/zebra
@@ -23,6 +24,7 @@ services:
     ports:
       - "${Z3_ZEBRA_HOST_RPC_PORT}:${Z3_ZEBRA_RPC_PORT}"
       - "${Z3_ZEBRA_HOST_HEALTH_PORT}:8080"
+      - "${Z3_ZEBRA_HOST_METRICS_PORT}:9999"
     networks:
       - z3_net
     healthcheck:
@@ -127,10 +129,52 @@ services:
     # Zallet will restart automatically if it crashes (restart: unless-stopped)
     # Monitor logs or use external monitoring for service health
 
+  prometheus:
+    image: prom/prometheus:latest
+    profiles: ["monitoring"]
+    container_name: z3_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    networks:
+      - z3_net
+
+  grafana:
+    image: grafana/grafana:latest
+    profiles: ["monitoring"]
+    container_name: z3_grafana
+    restart: unless-stopped
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./config/grafana/provisioning:/etc/grafana/provisioning
+      - ./config/grafana/dashboards:/etc/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    networks:
+      - z3_net
+    depends_on:
+      - prometheus
+
+
 volumes:
   zebra_data:
   zaino_data:
   zallet_data:
+  prometheus_data:
+  grafana_data:
   shared_cookie_volume:
 
 networks:

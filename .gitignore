@@ -31,3 +31,8 @@ config/tls/*
 
 # Un-ignore .gitkeep directly under config
 !config/.gitkeep
+
+# Monitoring Configuration
+!config/prometheus.yml
+!config/grafana/
+!config/grafana/**
