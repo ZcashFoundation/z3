@@ -25,7 +25,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "P1809F7CD0C75ACF3"
+        "uid": "z3_prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -72,9 +72,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "P1809F7CD0C75ACF3"
+            "uid": "z3_prometheus"
           },
-          "expr": "zebra_chain_height",
+          "expr": "zcash_chain_verified_block_height",
           "refId": "A"
         }
       ],
@@ -84,7 +84,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "P1809F7CD0C75ACF3"
+        "uid": "z3_prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -131,9 +131,9 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "P1809F7CD0C75ACF3"
+            "uid": "z3_prometheus"
           },
-          "expr": "zebra_peer_count",
+          "expr": "zcash_net_peers",
           "refId": "A"
         }
       ],
@@ -155,6 +155,6 @@
   "timezone": "",
   "title": "Zebra Status",
   "uid": "zebra-status",
-  "version": 1,
+  "version": 3,
   "weekStart": ""
 }
