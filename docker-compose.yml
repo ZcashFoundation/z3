@@ -101,7 +101,7 @@ services:
     container_name: z3_zallet
     restart: unless-stopped
     user: "65532:65532"
-    command: ["--datadir", "/var/lib/zallet", "start"]
+    command: ["--datadir", "/var/lib/zallet", "--config", "/etc/zallet/zallet.toml", "start"]
     depends_on:
       zebra:
         condition: service_healthy
@@ -116,9 +116,9 @@ services:
       - ${Z3_ZALLET_DATA_PATH}:/var/lib/zallet
       # Cookie authentication for Zebra access
       - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
-      # Configuration files
-      - ./config/zallet.toml:/var/lib/zallet/zallet.toml:ro
-      - ./config/zallet_identity.txt:/var/lib/zallet/identity.txt:ro
+      # Configuration files (mounted outside datadir to avoid permission conflicts)
+      - ./config/zallet.toml:/etc/zallet/zallet.toml:ro
+      - ./config/zallet_identity.txt:/etc/zallet/identity.txt:ro
     ports:
       - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
     networks:

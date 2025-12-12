@@ -41,7 +41,7 @@ validator_cookie_path = "/var/run/auth/.cookie"
 
 [keystore]
 # Age encryption identity file (mounted from ./config/zallet_identity.txt)
-encryption_identity = "identity.txt"
+encryption_identity = "/etc/zallet/identity.txt"
 
 [note_management]
 # Note management - using defaults
