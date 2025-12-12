@@ -49,7 +49,8 @@ docker compose up -d zebra
 
 # 5. Wait for Zebra to sync (this takes hours/days)
 ./check-zebra-readiness.sh
-# Or manually: curl http://localhost:8080/ready (returns "ok" when synced)
+# Or manually: curl http://localhost:8080/ready
+# Note: On testnet with defaults, /ready returns "ok" immediately (see Health Checks section)
 
 # 6. Once Zebra is synced, start the remaining services
 docker compose up -d
@@ -289,7 +290,7 @@ docker compose up -d zebra
 # Step 2: Monitor sync progress (choose one method)
 ./check-zebra-readiness.sh              # Recommended: script waits and notifies
 docker compose logs -f zebra             # Watch logs
-curl http://localhost:8080/ready         # Manual check (returns "ok" when synced)
+curl http://localhost:8080/ready         # Manual check (see note below for testnet)
 
 # Step 3: Once synced, start all services
 docker compose up -d
@@ -549,6 +550,9 @@ Zebra provides two HTTP endpoints for monitoring service health:
 - **Fails during**: Fresh sync (can take 24+ hours for mainnet)
 - **Endpoint**: `http://localhost:${Z3_ZEBRA_HOST_HEALTH_PORT:-8080}/ready`
 
+> [!NOTE]
+> **Testnet behavior differs by default.** With `ENFORCE_ON_TEST_NETWORKS=false` (the default), `/ready` always returns "ok" on testnet even during initial sync. This is intentional for development convenience. To enforce strict readiness checks on testnet, set `ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS=true` in `.env`.
+
 ### Service Dependency Strategy
 
 The Z3 stack uses **readiness-based dependencies** to prevent service hangs:
@@ -598,12 +602,14 @@ docker compose ps zebra
 
 ### Configuration Options
 
-**Skip sync wait for development** (`.env`):
+**Testnet readiness enforcement** (`.env`):
 ```bash
-# Make /ready always return 200 on testnet (even during sync)
+# Default: /ready always returns 200 on testnet (even during sync)
+# This allows faster development iteration without waiting for full sync
 ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS=false  # Default: false
 
-# When set to true, testnet behaves like mainnet (strict readiness check)
+# Set to true for production testnet deployments (strict readiness check)
+ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS=true
 ```
 
 **Adjust readiness threshold** (`.env`):
