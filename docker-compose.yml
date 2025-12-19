@@ -36,16 +36,17 @@ services:
       start_period: 90s
 
   zaino:
-    # No pre-built image available for this commit - must build locally
-    # Built from zingolabs/zaino:dev - commit 66b3199f (before config restructure)
-    # Run 'docker compose build zaino' to build from ./zaino submodule
-    image: ghcr.io/zcashfoundation/zaino:sha-934f857
+    # No official image from zingolabs yet - image built from zingolabs/zaino:dev
+    # To build locally instead: docker compose build zaino
+    image: ghcr.io/zcashfoundation/zaino:sha-417b679
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
       dockerfile: Dockerfile
     container_name: z3_zaino
     restart: unless-stopped
+    # Resolves Docker DNS hostname to IP (Zaino requires SocketAddr format)
+    entrypoint: ["/opt/zaino/docker-entrypoint.sh"]
     depends_on:
       zebra:
         condition: service_healthy
@@ -55,22 +56,24 @@ services:
       - RUST_LOG=${ZAINO_RUST_LOG}
       - RUST_BACKTRACE=${ZAINO_RUST_BACKTRACE}
       - ZAINO_NETWORK=${NETWORK_NAME}
-      # Zebra connection and authentication
-      - ZAINO_VALIDATOR_LISTEN_ADDRESS=zebra:${Z3_ZEBRA_RPC_PORT}
-      - ZAINO_VALIDATOR_COOKIE_AUTH=${ENABLE_COOKIE_AUTH}
-      - ZAINO_VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie
-      # Zaino RPC services
-      - ZAINO_GRPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
-      - ZAINO_JSON_RPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_JSON_RPC_PORT}
+      # Zebra connection (resolved to IP by entrypoint)
+      - ZEBRA_HOST=zebra
+      - ZEBRA_PORT=${Z3_ZEBRA_RPC_PORT}
+      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie
+      # gRPC server
+      - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
+      # JSON-RPC server
+      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_JSON_RPC_PORT}
       # TLS configuration
-      - ZAINO_GRPC_TLS=${ZAINO_GRPC_TLS_ENABLE}
-      - ZAINO_TLS_CERT_PATH=${ZAINO_GRPC_TLS_CERT_PATH}
-      - ZAINO_TLS_KEY_PATH=${ZAINO_GRPC_TLS_KEY_PATH}
+      - ZAINO_GRPC_SETTINGS__TLS__CERT_PATH=${ZAINO_GRPC_TLS_CERT_PATH}
+      - ZAINO_GRPC_SETTINGS__TLS__KEY_PATH=${ZAINO_GRPC_TLS_KEY_PATH}
     volumes:
       # Indexer state (defaults to named volume 'zaino_data')
       - ${Z3_ZAINO_DATA_PATH}:/home/zaino/.cache/zaino
       # Cookie authentication
       - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
+      # Custom entrypoint for DNS resolution workaround
+      - ./config/zaino/docker-entrypoint.sh:/opt/zaino/docker-entrypoint.sh:ro
     configs:
       - source: zaino_tls_cert
         target: ${ZAINO_GRPC_TLS_CERT_PATH}
@@ -90,17 +93,11 @@ services:
       start_period: 60s
 
   zallet:
-    # No pre-built image available - must build locally
-    # Built from zcash/wallet commit 60b0235 (uses zaino 13919816, before config restructure)
-    # Run 'docker compose build zallet' to build from ./zallet submodule
-    image: z3-zallet:local
+    image: electriccoinco/zallet:v0.1.0-alpha.3
     platform: ${DOCKER_PLATFORM:-linux/amd64}
-    build:
-      context: ./zallet
-      dockerfile: Dockerfile
     container_name: z3_zallet
     restart: unless-stopped
-    user: "65532:65532"
+    user: "1000:1000"
     command: ["--datadir", "/var/lib/zallet", "--config", "/etc/zallet/zallet.toml", "start"]
     depends_on:
       zebra:
@@ -123,9 +120,7 @@ services:
       - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
     networks:
       - z3_net
-    # NOTE: Healthcheck disabled - distroless image has no shell/curl
-    # Zallet will restart automatically if it crashes (restart: unless-stopped)
-    # Monitor logs or use external monitoring for service health
+    # No healthcheck: distroless image has no shell/curl
 
 volumes:
   zebra_data:

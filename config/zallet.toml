@@ -21,7 +21,7 @@ network = "main"
 # External settings - using defaults
 
 [features]
-as_of_version = "0.1.0-alpha.1"
+as_of_version = "0.1.0-alpha.3"
 
 [features.deprecated]
 # No deprecated features enabled
@@ -34,9 +34,7 @@ as_of_version = "0.1.0-alpha.1"
 # to fetch blockchain data. The validator_address MUST point to Zebra (not the
 # standalone Zaino service). Service name 'zebra' and port from Z3_ZEBRA_RPC_PORT in .env
 validator_address = "zebra:18232"
-
-# Cookie authentication (matches Zebra's ENABLE_COOKIE_AUTH=true)
-validator_cookie_auth = true
+# Cookie authentication path (matches Zebra's ENABLE_COOKIE_AUTH=true)
 validator_cookie_path = "/var/run/auth/.cookie"
 
 [keystore]

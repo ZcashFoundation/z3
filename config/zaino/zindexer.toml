@@ -1,0 +1,22 @@
+# Zaino Configuration for Z3 Stack
+
+[grpc_settings]
+listen_address = "0.0.0.0:8137"
+
+[grpc_settings.tls]
+cert_path = "/var/run/zaino/tls/zaino.crt"
+key_path = "/var/run/zaino/tls/zaino.key"
+
+[validator_settings]
+validator_jsonrpc_listen_address = "127.0.0.1:18232"
+validator_cookie_path = "/var/run/auth/.cookie"
+
+[service]
+
+[storage.cache]
+
+[storage.database]
+path = "/home/zaino/.cache/zaino"
+
+network = "Mainnet"
+zebra_db_path = "/home/zaino/.cache/zebra"
