@@ -37,8 +37,7 @@ services:
 
   zaino:
     # No official image from zingolabs yet - built from zingolabs/zaino:dev
-    # To build locally: docker compose build zaino
-    image: ghcr.io/zcashfoundation/zaino:sha-417b679
+    image: ghcr.io/zcashfoundation/zaino:sha-1871eba
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
