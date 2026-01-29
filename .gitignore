@@ -29,9 +29,8 @@ config/tls/*
 # Then un-ignore the .gitkeep file within 'tls'
 !config/tls/.gitkeep
 
-# Un-ignore zaino config directory (needed for Docker DNS resolution workaround)
+# Zaino config (required by config-rs)
 !config/zaino/
-!config/zaino/docker-entrypoint.sh
 !config/zaino/zindexer.toml
 
 # Un-ignore .gitkeep directly under config

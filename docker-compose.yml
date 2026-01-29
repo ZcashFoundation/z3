@@ -36,8 +36,8 @@ services:
       start_period: 90s
 
   zaino:
-    # No official image from zingolabs yet - image built from zingolabs/zaino:dev
-    # To build locally instead: docker compose build zaino
+    # No official image from zingolabs yet - built from zingolabs/zaino:dev
+    # To build locally: docker compose build zaino
     image: ghcr.io/zcashfoundation/zaino:sha-417b679
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
@@ -45,20 +45,15 @@ services:
       dockerfile: Dockerfile
     container_name: z3_zaino
     restart: unless-stopped
-    # Resolves Docker DNS hostname to IP (Zaino requires SocketAddr format)
-    entrypoint: ["/opt/zaino/docker-entrypoint.sh"]
+    command: ["zainod", "--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
         condition: service_healthy
-    env_file:
-      - ./.env
     environment:
       - RUST_LOG=${ZAINO_RUST_LOG}
       - RUST_BACKTRACE=${ZAINO_RUST_BACKTRACE}
       - ZAINO_NETWORK=${NETWORK_NAME}
-      # Zebra connection (resolved to IP by entrypoint)
-      - ZEBRA_HOST=zebra
-      - ZEBRA_PORT=${Z3_ZEBRA_RPC_PORT}
+      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS=zebra:${Z3_ZEBRA_RPC_PORT}
       - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie
       # gRPC server
       - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
@@ -72,8 +67,7 @@ services:
       - ${Z3_ZAINO_DATA_PATH}:/home/zaino/.cache/zaino
       # Cookie authentication
       - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
-      # Custom entrypoint for DNS resolution workaround
-      - ./config/zaino/docker-entrypoint.sh:/opt/zaino/docker-entrypoint.sh:ro
+      - ./config/zaino/zindexer.toml:/etc/zaino/zindexer.toml:ro
     configs:
       - source: zaino_tls_cert
         target: ${ZAINO_GRPC_TLS_CERT_PATH}
