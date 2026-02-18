@@ -38,3 +38,6 @@ config/tls/*
 
 # Un-ignore .gitkeep directly under config
 !config/.gitkeep
+
+# Ignore docker compose overrides
+docker-compose.override.yml
