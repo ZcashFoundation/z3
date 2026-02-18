@@ -45,6 +45,9 @@ services:
     build:
       context: ./zaino
       dockerfile: Dockerfile
+      args:
+        USER: zaino
+        HOME: /home/zaino
     container_name: z3_zaino
     restart: unless-stopped
     command: ["zainod", "--config", "/etc/zaino/zindexer.toml"]
