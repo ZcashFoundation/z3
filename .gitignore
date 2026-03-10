@@ -38,3 +38,6 @@ config/tls/*
 
 # Un-ignore .gitkeep directly under config
 !config/.gitkeep
+
+# Local rpc-router regtest zallet identity
+rpc-router/regtest/config/zallet_identity.txt
