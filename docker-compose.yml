@@ -40,7 +40,7 @@ services:
 
   zaino:
     # No official image from zingolabs yet - built from zingolabs/zaino:dev
-    image: ghcr.io/zcashfoundation/zaino:sha-1871eba
+    image: zingodevops/zaino:0.2.0-rc.4-no-tls
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
@@ -92,15 +92,12 @@ services:
     # Default to a local tag for reliable dev/regtest flows.
     # To pull and run a remote image instead, set:
     #   ZALLET_IMAGE=zodlinc/zallet:v0.1.0-alpha.4
-    image: ${ZALLET_IMAGE:-z3_zallet:local}
+    image: zodlinc/zallet:v0.1.0-alpha.4
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zallet
       dockerfile: Dockerfile
       target: runtime
-      tags:
-        - z3_zallet:local
-        - zodlinc/zallet:v0.1.0-alpha.4
     container_name: z3_zallet
     restart: unless-stopped
     user: "1000:1000"
