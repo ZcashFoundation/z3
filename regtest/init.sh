@@ -108,7 +108,7 @@ echo "==> Starting Zebra in regtest mode..."
 $DOCKER compose up -d zebra
 
 echo "==> Waiting for Zebra RPC to be ready..."
-until $DOCKER compose exec zebra curl -sf -X POST \
+until curl -sf -X POST \
     -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
     http://127.0.0.1:18232 > /dev/null 2>&1; do
@@ -118,7 +118,7 @@ done
 echo "   Zebra is ready."
 
 echo "==> Mining 1 block (required for Orchard activation at height 1)..."
-$DOCKER compose exec zebra curl -s -u zebra:zebra \
+curl -s -u zebra:zebra \
     -X POST -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"generate","params":[1],"id":1}' \
     http://127.0.0.1:18232 | grep -q '"result"'
