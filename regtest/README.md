@@ -40,6 +40,7 @@ sudo -E docker compose up -d
 ```
 
 Router is available at **http://localhost:8181**.
+Zaino gRPC (lightwalletd-compatible) is available at **localhost:8137**.
 
 ## Test routing
 
@@ -83,6 +84,7 @@ sudo -E docker compose down -v
 - Credentials: `zebra` / `zebra` (hardcoded for regtest only)
 - Zallet uses regtest nuparams activating all upgrades at block 1
 - The rpc-router Dockerfile is in `rpc-router/`
+- Zaino gRPC (port 8137) is the lightwalletd-compatible interface for light wallet clients; it is exposed directly and not routed through the rpc-router
 
 ## Tested environment
 
