@@ -26,9 +26,7 @@ This will:
 3. Generate and inject the Zallet `rpc.auth.pwhash` in `config/zallet.toml`
 4. Initialize the Zallet wallet (`init-wallet-encryption` + `generate-mnemonic`)
 
-Optional: override the RPC password used for the hash generation:
-
-This (default) password which is included in zcash/integration-tests is not checked into the repo to avoid offending the kingphisher and other code scanning gods.
+Optionally override the RPC password (default is `zebra`):
 
 ```bash
 RPC_PASSWORD='your-password' ./init.sh
