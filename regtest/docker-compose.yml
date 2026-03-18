@@ -45,24 +45,27 @@ services:
     build:
       context: ../zaino
       dockerfile: Dockerfile
+      args:
+        NO_TLS: "true"
     container_name: z3_regtest_zaino
     restart: unless-stopped
+    command: ["start", "--config", "/etc/zaino/zaino.toml"]
     depends_on:
       zebra:
         condition: service_healthy
     environment:
       - RUST_LOG=info
-      - ZAINO_NETWORK=Regtest
-      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS=zebra:18232
-      - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:8137
-      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=0.0.0.0:8237
+    volumes:
+      - zaino_regtest_data:/home/container_user/.cache/zaino
+      - ./config/zaino.toml:/etc/zaino/zaino.toml:ro
     ports:
       - "8137:8137"
       - "8237:8237"
     networks:
       - regtest_net
     healthcheck:
-      test: ["CMD-SHELL", "nc -z 127.0.0.1 8137 || exit 1"]
+      # zaino image only has zainod; use --version as a liveness probe
+      test: ["CMD", "/usr/local/bin/zainod", "--version"]
       interval: 10s
       timeout: 5s
       retries: 10
