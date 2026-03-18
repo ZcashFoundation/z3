@@ -33,7 +33,7 @@ Wait until both services are healthy, then note the RPC ports from your `.env` f
 
 > **Note:** A `openrpc.py` QA helper that spawned Zebra and Zallet in regtest mode previously existed in the Zebra repository but was removed. It has not been ported to the [zcash/integration-tests](https://github.com/zcash/integration-tests) repository.
 
-> **Note:** For experimental Z3 regtest mode of the router see [Regtest Environment](regtest/README.md).
+> **Note:** For experimental Z3 regtest mode of the router see [Regtest Environment](../regtest/README.md).
 
 ### Running the RPC Router
 

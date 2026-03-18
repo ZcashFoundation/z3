@@ -62,7 +62,7 @@ services:
 
   rpc-router:
     build:
-      context: ../
+      context: ../rpc-router
       dockerfile: Dockerfile
     container_name: z3_regtest_router
     restart: unless-stopped

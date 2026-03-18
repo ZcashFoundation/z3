@@ -1,6 +1,6 @@
-# RPC Router — Regtest Environment
+# Z3 Regtest Environment
 
-Self-contained Docker Compose setup for local end-to-end testing of the rpc-router against real Zebra and Zallet backends in regtest mode.
+Self-contained Docker Compose setup for local end-to-end testing of the full Z3 stack (Zebra, Zallet, and the rpc-router) in regtest mode.
 
 **Does not touch the production stack** in the repo root.
 
@@ -8,14 +8,14 @@ Self-contained Docker Compose setup for local end-to-end testing of the rpc-rout
 
 - Docker with the `z3-zallet:local` image built:
   ```bash
-  cd ../../   # repo root
+  cd ..   # repo root
   docker compose build zallet
   ```
 
 ## First-time setup
 
 ```bash
-cd rpc-router/regtest
+cd regtest
 ./init.sh
 ```
 
@@ -82,7 +82,7 @@ sudo -E docker compose down -v
 
 - Credentials: `zebra` / `zebra` (hardcoded for regtest only)
 - Zallet uses regtest nuparams activating all upgrades at block 1
-- The rpc-router Dockerfile is in `rpc-router/` (one level up)
+- The rpc-router Dockerfile is in `rpc-router/`
 
 ## Tested environment
 
