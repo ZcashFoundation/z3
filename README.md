@@ -40,9 +40,12 @@ rage-keygen -o config/zallet_identity.txt
 # 2. Build Zaino and Zallet (required - no pre-built images available)
 docker compose build zaino zallet
 
-# 3. Review configuration
+# 3. Set up environment
+#    - Copy the example for your network:
+#      cp .env.example.mainnet .env       # for Mainnet
+#      cp .env.example.testnet .env       # for Testnet
+#    - Review .env and update as needed
 #    - config/zallet.toml: set network = "main" or "test"
-#    - .env: review defaults (usually no changes needed)
 
 # 4. Start ONLY Zebra first
 docker compose up -d zebra
@@ -253,9 +256,16 @@ Sync time varies based on CPU speed, disk I/O (SSD vs HDD), and network bandwidt
 
     See [Configuration Guide](#configuration-guide) for details on Zallet's architecture and config requirements.
 
-7. **Review Environment Variables:**
+7. **Set up Environment Variables:**
 
-    A comprehensive `.env` file is provided with sensible defaults. Review and customize as needed:
+    Copy the example file for your target network:
+
+    ```bash
+    cp .env.example.mainnet .env    # Mainnet
+    cp .env.example.testnet .env    # Testnet
+    ```
+
+    Review `.env` and customize as needed:
     - `NETWORK_NAME` - Set to `Mainnet` or `Testnet`
     - Log levels for each service (defaults to `info` with warning filters)
     - Port mappings (defaults work for most setups)
