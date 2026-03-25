@@ -63,12 +63,11 @@ ensure_openssl() {
 update_zallet_rpc_pwhash() {
     local config_path="$REPO_ROOT/config/regtest/zallet.toml"
     local rpc_password="${RPC_PASSWORD:-zebra}"
+    local placeholder="__GENERATED_BY_INIT_SH__"
     local salt
     local hash
     local pwhash
     local tmp
-
-    ensure_openssl
 
     if [ ! -f "$config_path" ]; then
         log "Missing zallet config: $config_path"
@@ -79,6 +78,14 @@ update_zallet_rpc_pwhash() {
         log "Could not find a pwhash entry in $config_path"
         exit 1
     fi
+
+    # Skip if already generated (not the placeholder)
+    if ! grep -q "pwhash = \"${placeholder}\"" "$config_path"; then
+        log "==> Zallet RPC pwhash already generated, skipping."
+        return
+    fi
+
+    ensure_openssl
 
     salt="$(openssl rand -hex 16)"
     hash="$(printf '%s' "$rpc_password" | openssl dgst -sha256 -mac HMAC -macopt "key:$salt" | awk '{print $NF}')"
@@ -94,7 +101,7 @@ update_zallet_rpc_pwhash() {
     sed -E "s|^pwhash = \".*\"$|pwhash = \"${pwhash}\"|" "$config_path" > "$tmp"
     mv "$tmp" "$config_path"
 
-    log "==> Updated zallet RPC pwhash in config/regtest/zallet.toml"
+    log "==> Generated zallet RPC pwhash in config/regtest/zallet.toml"
 }
 
 # Use sudo for docker if needed

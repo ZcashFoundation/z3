@@ -66,17 +66,17 @@ Update `config/zallet.toml` to set `network = "test"` in the `[consensus]` secti
 
 Regtest uses a compose overlay (`docker-compose.regtest.yml`) that adds the rpc-router service, disables TLS, and adjusts healthchecks for a peerless network. Volumes are automatically isolated via `COMPOSE_PROJECT_NAME=z3-regtest`.
 
-First-time setup:
+First-time setup (**required** before starting the stack):
 
 ```bash
-# Initialize wallet and mine the first block
+# Initialize wallet, generate RPC auth, and mine the first block
 ./scripts/regtest-init.sh
 
 # Start the full regtest stack
 docker compose --env-file .env.regtest up -d
 ```
 
-The init script starts Zebra, mines the first block, and initializes the Zallet wallet. Subsequent runs only need the last command.
+The init script generates the Zallet RPC password hash, starts Zebra, mines the first block, and initializes the Zallet wallet. It is safe to re-run — it skips steps that are already done. Subsequent runs only need the last command.
 
 See [docs/regtest.md](docs/regtest.md) for test commands (curl, grpcurl) and the full workflow reference.
 
