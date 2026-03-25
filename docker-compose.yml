@@ -73,7 +73,10 @@ services:
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
-    command: ["zainod", "--config", "/etc/zaino/zindexer.toml"]
+    # Zaino's entrypoint runs mkdir/chown before dropping privileges via setpriv.
+    # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    command: ["--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
         condition: service_healthy
@@ -88,7 +91,7 @@ services:
       ZAINO_GRPC_SETTINGS__TLS__CERT_PATH: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
       ZAINO_GRPC_SETTINGS__TLS__KEY_PATH: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
     volumes:
-      - ${Z3_ZAINO_DATA_PATH:-zaino_data}:/home/zaino/.cache/zaino
+      - ${Z3_ZAINO_DATA_PATH:-zaino_data}:/app/data
       - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}:ro
       - ./config/zaino.toml:/etc/zaino/zindexer.toml:ro
     configs:
