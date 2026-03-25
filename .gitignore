@@ -41,3 +41,6 @@ config/tls/*
 
 # Ignore docker compose overrides
 docker-compose.override.yml
+
+# Local rpc-router regtest zallet identity
+rpc-router/regtest/config/zallet_identity.txt
