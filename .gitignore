@@ -44,3 +44,6 @@ regtest/config/zallet_identity.txt
 
 # Runtime environment — copy .env.example.<mainnet|testnet|regtest> to .env
 .env
+
+# Ignore docker compose overrides
+docker-compose.override.yml
