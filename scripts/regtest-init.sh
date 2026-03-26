@@ -137,6 +137,9 @@ ensure_local_identity
 ensure_tls_certs
 update_zallet_rpc_pwhash
 
+# Clean up any leftover containers from previous runs
+$COMPOSE down --remove-orphans 2>/dev/null || true
+
 echo "==> Starting Zebra in regtest mode..."
 $COMPOSE up -d zebra
 
