@@ -70,7 +70,7 @@ ensure_tls_certs() {
     log "   TLS certificate written to config/tls/zaino.crt"
 }
 
-
+ensure_openssl() {
     if command -v openssl > /dev/null 2>&1; then
         return
     fi
