@@ -7,7 +7,7 @@
 # Requirements:
 #   - Docker with Docker Compose v2.24.0+
 #   - rage-keygen (for first-time identity generation)
-#   - TLS certificates generated (see README Quick Start)
+#   - openssl (for TLS certificate and RPC password hash generation)
 #   - No running z3_regtest_* containers
 
 set -euo pipefail
@@ -50,7 +50,27 @@ ensure_local_identity() {
     chmod 600 "$identity_path"
 }
 
-ensure_openssl() {
+ensure_tls_certs() {
+    local cert_path="$REPO_ROOT/config/tls/zaino.crt"
+    local key_path="$REPO_ROOT/config/tls/zaino.key"
+
+    if [ -f "$cert_path" ] && [ -f "$key_path" ]; then
+        log "==> Reusing existing TLS certificates..."
+        return
+    fi
+
+    ensure_openssl
+
+    log "==> Generating self-signed TLS certificate for Zaino..."
+    mkdir -p "$REPO_ROOT/config/tls"
+    openssl req -x509 -newkey rsa:4096 \
+        -keyout "$key_path" -out "$cert_path" \
+        -sha256 -days 365 -nodes -subj "/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
+    log "   TLS certificate written to config/tls/zaino.crt"
+}
+
+
     if command -v openssl > /dev/null 2>&1; then
         return
     fi
@@ -114,6 +134,7 @@ fi
 cd "$REPO_ROOT"
 
 ensure_local_identity
+ensure_tls_certs
 update_zallet_rpc_pwhash
 
 echo "==> Starting Zebra in regtest mode..."
@@ -140,12 +161,15 @@ echo "   Block mined."
 VOLUME_PREFIX="z3-regtest"
 
 echo "==> Running init-wallet-encryption..."
-# Remove stale lock file if present (left by a previous interrupted run)
+# Remove stale lock file and wallet database if present (left by a previous
+# interrupted run). wallet.db will be recreated with the correct schema by
+# init-wallet-encryption; leaving a stale one causes a schema mismatch error.
 $DOCKER run --rm -v "${VOLUME_PREFIX}_zallet_data:/data" busybox \
-    sh -c 'rm -f /data/.lock'
-# Check if wallet already initialized by looking for the wallet database
+    sh -c 'rm -f /data/.lock /data/wallet.db'
+# Check if wallet already initialized: generate-mnemonic stores an age-encrypted
+# file; if one exists the full init sequence has already completed successfully.
 ALREADY_INIT=$($DOCKER run --rm -v "${VOLUME_PREFIX}_zallet_data:/data" busybox \
-    sh -c 'ls /data/*.sqlite /data/*.age 2>/dev/null | wc -l')
+    sh -c 'ls /data/*.age 2>/dev/null | wc -l')
 if [ "${ALREADY_INIT:-0}" -gt 0 ]; then
     echo "   Wallet already initialized, skipping."
 else
