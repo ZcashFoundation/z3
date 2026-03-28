@@ -35,8 +35,12 @@ services:
       - ./config/regtest/zaino.toml:/etc/zaino/zindexer.toml:ro
 
   zallet:
-    # Override config files with regtest-specific versions
-    volumes:
+    # Regtest uses username/password auth, not cookie auth.
+    # Override the full volumes list to avoid inheriting the cookie volume mount
+    # from the base compose file (which fails on distroless images where /var/run
+    # is not a directory).
+    volumes: !override
+      - ${Z3_ZALLET_DATA_PATH:-zallet_data}:/var/lib/zallet
       - ./config/regtest/zallet.toml:/etc/zallet/zallet.toml:ro
       - ./config/regtest/zallet_identity.txt:/etc/zallet/identity.txt:ro
 
