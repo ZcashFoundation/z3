@@ -1,0 +1,73 @@
+# Regtest overlay — merged on top of docker-compose.yml
+#
+# Usage: docker compose --env-file .env.regtest up -d
+# Or:    ./scripts/regtest-init.sh   (first time)
+#
+# This file only contains regtest-specific structural differences.
+# All other config (network, ports, volumes) comes from .env.regtest
+# overriding the defaults in the base docker-compose.yml.
+
+services:
+  zebra:
+    environment:
+      ZEBRA_MINING__MINER_ADDRESS: ${ZEBRA_MINING__MINER_ADDRESS:-}
+    # Regtest has no peers — check RPC directly instead of /ready
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -X POST -H 'Content-Type: application/json' -d '{\"jsonrpc\":\"2.0\",\"method\":\"getblockchaininfo\",\"params\":[],\"id\":1}' http://127.0.0.1:18232 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  zaino:
+    # Regtest uses username/password auth (set in config/regtest/zaino.toml), not cookie auth.
+    # Override the full environment to avoid inheriting the cookie path from the base.
+    environment: !override
+      RUST_LOG: ${ZAINO_RUST_LOG:-info}
+      ZAINO_NETWORK: Regtest
+      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS: zebra:${Z3_ZEBRA_RPC_PORT:-18232}
+      ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:${ZAINO_GRPC_PORT:-8137}
+      ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:${ZAINO_JSON_RPC_PORT:-8237}
+      ZAINO_GRPC_SETTINGS__TLS__CERT_PATH: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
+      ZAINO_GRPC_SETTINGS__TLS__KEY_PATH: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
+    # Override config file with regtest-specific version
+    volumes:
+      - ./config/regtest/zaino.toml:/etc/zaino/zindexer.toml:ro
+
+  zallet:
+    # Regtest uses username/password auth, not cookie auth.
+    # Override the full volumes list to avoid inheriting the cookie volume mount
+    # from the base compose file (which fails on distroless images where /var/run
+    # is not a directory).
+    volumes: !override
+      - ${Z3_ZALLET_DATA_PATH:-zallet_data}:/var/lib/zallet
+      - ./config/regtest/zallet.toml:/etc/zallet/zallet.toml:ro
+      - ./config/regtest/zallet_identity.txt:/etc/zallet/identity.txt:ro
+
+  rpc-router:
+    build:
+      context: ./rpc-router
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      ZEBRA_URL: http://zebra:18232
+      ZALLET_URL: http://zallet:28232
+      RPC_USER: ${RPC_USER:-zebra}
+      RPC_PASSWORD: ${RPC_PASSWORD:-zebra}
+      LISTEN_PORT: "8181"
+    ports:
+      - "8181:8181"
+    depends_on:
+      zebra:
+        condition: service_healthy
+      zallet:
+        condition: service_started
+    networks:
+      - z3_net

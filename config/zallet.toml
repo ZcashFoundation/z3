@@ -45,7 +45,6 @@ encryption_identity = "/etc/zallet/identity.txt"
 # Note management - using defaults
 
 [rpc]
-# RPC server configuration
-# Bind address is set via ZALLET_RPC_BIND environment variable in docker-compose
+# Bind port must match ZALLET_RPC_PORT in .env if overridden (both must change together)
 bind = ["0.0.0.0:28232"]
 timeout = 30

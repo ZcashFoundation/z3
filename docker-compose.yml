@@ -1,8 +1,21 @@
+# Shared defaults applied to all services via <<: *common
+# - logging: rotates logs (50MB x 5 files) to prevent unbounded disk growth
+# - cap_drop: removes all Linux capabilities (services run as non-root)
+# - security_opt: prevents privilege escalation via setuid binaries
+# See docs/docker-architecture.md for rationale.
+x-common: &common
+  logging:
+    driver: json-file
+    options:
+      max-size: "50m"
+      max-file: "5"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
 services:
   zebra:
-    # Run 'docker compose build' to build locally from ./zebra submodule instead
-    # For OpenTelemetry tracing: docker compose build --build-arg FEATURES="default-release-binaries opentelemetry" zebra
-    image: zfnd/zebra:4.2.0
+    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.2.0}
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zebra
       dockerfile: docker/Dockerfile
@@ -11,88 +24,96 @@ services:
         FEATURES: ${ZEBRA_BUILD_FEATURES:-default-release-binaries}
     container_name: z3_zebra
     restart: unless-stopped
+    stop_grace_period: 30s
+    <<: *common
+    # Zebra's entrypoint runs mkdir/chown before dropping privileges via setpriv.
+    # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    # Optional ZEBRA_* vars (metrics, OpenTelemetry) pass through from .env when set.
+    # They must NOT be listed in environment: with empty defaults because config-rs
+    # treats empty strings as values and fails to parse them (e.g., "" as a socket address).
     env_file:
-      - ./.env
+      - path: ./.env
+        required: false
     environment:
-      - RUST_LOG=${Z3_ZEBRA_RUST_LOG}
-      - ZEBRA_NETWORK__NETWORK=${NETWORK_NAME}
-      - ZEBRA_RPC__ENABLE_COOKIE_AUTH=${ENABLE_COOKIE_AUTH}
-      - ZEBRA_RPC__COOKIE_DIR=${COOKIE_AUTH_FILE_DIR}
+      RUST_LOG: ${Z3_ZEBRA_RUST_LOG:-info}
+      ZEBRA_NETWORK__NETWORK: ${NETWORK_NAME:-Mainnet}
+      ZEBRA_RPC__LISTEN_ADDR: 0.0.0.0:${Z3_ZEBRA_RPC_PORT:-18232}
+      ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ENABLE_COOKIE_AUTH:-true}
+      ZEBRA_RPC__COOKIE_DIR: ${COOKIE_AUTH_FILE_DIR:-/var/run/auth}
+      ZEBRA_TRACING__FILTER: ${ZEBRA_TRACING__FILTER:-info}
+      ZEBRA_STATE__CACHE_DIR: /home/zebra/.cache/zebra
+      ZEBRA_HEALTH__LISTEN_ADDR: 0.0.0.0:8080
+      ZEBRA_HEALTH__MIN_CONNECTED_PEERS: ${ZEBRA_HEALTH__MIN_CONNECTED_PEERS:-1}
+      ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND: ${ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND:-2}
+      ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS: ${ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS:-false}
     volumes:
-      # Blockchain state (defaults to named volume 'zebra_data')
-      - ${Z3_ZEBRA_DATA_PATH}:/home/zebra/.cache/zebra
-      # Cookie authentication shared with Zaino and Zallet
-      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}
+      - ${Z3_ZEBRA_DATA_PATH:-zebra_data}:/home/zebra/.cache/zebra
+      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}
     ports:
-      - "${Z3_ZEBRA_HOST_RPC_PORT}:${Z3_ZEBRA_RPC_PORT}"
-      - "${Z3_ZEBRA_HOST_HEALTH_PORT}:8080"
+      - "${Z3_ZEBRA_HOST_RPC_PORT:-18232}:${Z3_ZEBRA_RPC_PORT:-18232}"
+      - "${Z3_ZEBRA_HOST_HEALTH_PORT:-8080}:8080"
     networks:
       - z3_net
     healthcheck:
-      # Verifies Zebra is synced near network tip (default: within 2 blocks)
-      # For fresh sync: run 'docker compose up -d zebra' first, wait for sync,
-      # then run 'docker compose up -d' to start full stack
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ready || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 90s
+      start_interval: 5s
 
   zaino:
-    # No official image from zingolabs yet - built from zingolabs/zaino:dev
-    image: ghcr.io/zcashfoundation/zaino:sha-1871eba
+    image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-0164cab}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
       dockerfile: Dockerfile
     container_name: z3_zaino
     restart: unless-stopped
-    command: ["zainod", "--config", "/etc/zaino/zindexer.toml"]
+    stop_grace_period: 15s
+    <<: *common
+    # Zaino's entrypoint runs mkdir/chown before dropping privileges via setpriv.
+    # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    command: ["--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
         condition: service_healthy
     environment:
-      - RUST_LOG=${ZAINO_RUST_LOG}
-      - RUST_BACKTRACE=${ZAINO_RUST_BACKTRACE}
-      - ZAINO_NETWORK=${NETWORK_NAME}
-      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS=zebra:${Z3_ZEBRA_RPC_PORT}
-      - ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH=${COOKIE_AUTH_FILE_DIR}/.cookie
-      # gRPC server
-      - ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS=0.0.0.0:${ZAINO_GRPC_PORT}
-      # JSON-RPC server
-      - ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS=0.0.0.0:${ZAINO_JSON_RPC_PORT}
-      # TLS configuration
-      - ZAINO_GRPC_SETTINGS__TLS__CERT_PATH=${ZAINO_GRPC_TLS_CERT_PATH}
-      - ZAINO_GRPC_SETTINGS__TLS__KEY_PATH=${ZAINO_GRPC_TLS_KEY_PATH}
+      RUST_LOG: ${ZAINO_RUST_LOG:-info,reqwest=warn,hyper_util=warn}
+      RUST_BACKTRACE: ${ZAINO_RUST_BACKTRACE:-full}
+      ZAINO_NETWORK: ${NETWORK_NAME:-Mainnet}
+      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS: zebra:${Z3_ZEBRA_RPC_PORT:-18232}
+      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH: ${COOKIE_AUTH_FILE_DIR:-/var/run/auth}/.cookie
+      ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:${ZAINO_GRPC_PORT:-8137}
+      ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:${ZAINO_JSON_RPC_PORT:-8237}
+      ZAINO_GRPC_SETTINGS__TLS__CERT_PATH: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
+      ZAINO_GRPC_SETTINGS__TLS__KEY_PATH: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
     volumes:
-      # Indexer state (defaults to named volume 'zaino_data')
-      - ${Z3_ZAINO_DATA_PATH}:/home/zaino/.cache/zaino
-      # Cookie authentication
-      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
-      - ./config/zaino/zindexer.toml:/etc/zaino/zindexer.toml:ro
+      - ${Z3_ZAINO_DATA_PATH:-zaino_data}:/app/data
+      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}:ro
+      - ./config/zaino.toml:/etc/zaino/zindexer.toml:ro
     configs:
       - source: zaino_tls_cert
-        target: ${ZAINO_GRPC_TLS_CERT_PATH}
+        target: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
       - source: zaino_tls_key
-        target: ${ZAINO_GRPC_TLS_KEY_PATH}
+        target: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
     ports:
-      - "${ZAINO_HOST_GRPC_PORT}:${ZAINO_GRPC_PORT}"
-      - "${ZAINO_HOST_JSONRPC_PORT}:${ZAINO_JSON_RPC_PORT}"
+      - "${ZAINO_HOST_GRPC_PORT:-8137}:${ZAINO_GRPC_PORT:-8137}"
+      - "${ZAINO_HOST_JSONRPC_PORT:-8237}:${ZAINO_JSON_RPC_PORT:-8237}"
     networks:
       - z3_net
     healthcheck:
-      # Process check (gRPC cannot be directly curled)
-      test: ["CMD-SHELL", "/usr/local/bin/zainod --version >/dev/null 2>&1 || exit 1"]
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8137' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 60s
+      start_interval: 5s
 
   zallet:
-    # Default to a local tag for reliable dev/regtest flows.
-    # To pull and run a remote image instead, set:
-    #   ZALLET_IMAGE=zodlinc/zallet:v0.1.0-alpha.4
-    image: ${ZALLET_IMAGE:-z3_zallet:local}
+    image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zallet
@@ -100,30 +121,24 @@ services:
       target: runtime
       tags:
         - z3_zallet:local
-        - zodlinc/zallet:v0.1.0-alpha.4
     container_name: z3_zallet
     restart: unless-stopped
+    stop_grace_period: 15s
+    <<: *common
     user: "1000:1000"
     command: ["--datadir", "/var/lib/zallet", "--config", "/etc/zallet/zallet.toml", "start"]
     depends_on:
       zebra:
         condition: service_healthy
-    env_file:
-      - ./.env
     environment:
-      - RUST_LOG=${ZALLET_RUST_LOG}
-      # Zallet configuration is handled via config/zallet.toml
-      # Environment variable overrides are currently not supported by Zallet
+      RUST_LOG: ${ZALLET_RUST_LOG:-info,hyper_util=warn,reqwest=warn}
     volumes:
-      # Wallet database (defaults to named volume 'zallet_data')
-      - ${Z3_ZALLET_DATA_PATH}:/var/lib/zallet
-      # Cookie authentication for Zebra access
-      - ${Z3_COOKIE_PATH}:${COOKIE_AUTH_FILE_DIR}:ro
-      # Configuration files (mounted outside datadir to avoid permission conflicts)
+      - ${Z3_ZALLET_DATA_PATH:-zallet_data}:/var/lib/zallet
+      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}:ro
       - ./config/zallet.toml:/etc/zallet/zallet.toml:ro
       - ./config/zallet_identity.txt:/etc/zallet/identity.txt:ro
     ports:
-      - "${ZALLET_HOST_RPC_PORT}:${ZALLET_RPC_PORT}"
+      - "${ZALLET_HOST_RPC_PORT:-28232}:${ZALLET_RPC_PORT:-28232}"
     networks:
       - z3_net
     # No healthcheck: distroless image has no shell/curl
@@ -143,6 +158,7 @@ services:
     container_name: z3_jaeger
     profiles: [monitoring]
     restart: unless-stopped
+    <<: *common
     volumes:
       - ./observability/jaeger/config.yaml:/etc/jaeger/config.yaml:ro
     command:
@@ -165,6 +181,7 @@ services:
     container_name: z3_prometheus
     profiles: [monitoring]
     restart: unless-stopped
+    <<: *common
     volumes:
       - prometheus_data:/prometheus
       - ./observability/prometheus/rules:/etc/prometheus/rules:ro
@@ -194,13 +211,14 @@ services:
     container_name: z3_grafana
     profiles: [monitoring]
     restart: unless-stopped
+    <<: *common
     volumes:
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - grafana_data:/var/lib/grafana
     environment:
-      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/zebra_overview.json
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/zebra_overview.json
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     networks:
@@ -222,6 +240,7 @@ services:
     container_name: z3_alertmanager
     profiles: [monitoring]
     restart: unless-stopped
+    <<: *common
     volumes:
       - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager

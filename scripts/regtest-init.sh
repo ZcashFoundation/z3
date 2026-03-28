@@ -1,21 +1,25 @@
 #!/usr/bin/env bash
 # init.sh - Initialize the regtest wallet for the first time.
 #
-# Run this once before `docker compose up -d`.
+# Run this once before starting the regtest stack.
 # Safe to re-run: skips steps if already done.
 #
 # Requirements:
-#   - Docker with the z3_zallet:local image built (cd ../../ && docker compose build zallet)
+#   - Docker with Docker Compose v2.24.0+
+#   - rage-keygen (for first-time identity generation)
+#   - openssl (for TLS certificate and RPC password hash generation)
 #   - No running z3_regtest_* containers
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_FILE="$REPO_ROOT/.env.regtest"
+COMPOSE="docker compose --env-file $ENV_FILE"
+
 log() {
     printf '%s\n' "$*"
 }
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NETWORK=regtest_regtest_net
 
 ensure_rage() {
     if command -v rage-keygen > /dev/null 2>&1; then
@@ -31,7 +35,7 @@ ensure_rage() {
 }
 
 ensure_local_identity() {
-    local identity_path="$SCRIPT_DIR/config/zallet_identity.txt"
+    local identity_path="$REPO_ROOT/config/regtest/zallet_identity.txt"
 
     if [ -f "$identity_path" ]; then
         log "==> Reusing existing local zallet identity..."
@@ -41,9 +45,29 @@ ensure_local_identity() {
     ensure_rage
 
     log "==> Generating local zallet identity..."
-    mkdir -p "$SCRIPT_DIR/config"
+    mkdir -p "$REPO_ROOT/config/regtest"
     rage-keygen -o "$identity_path"
     chmod 600 "$identity_path"
+}
+
+ensure_tls_certs() {
+    local cert_path="$REPO_ROOT/config/tls/zaino.crt"
+    local key_path="$REPO_ROOT/config/tls/zaino.key"
+
+    if [ -f "$cert_path" ] && [ -f "$key_path" ]; then
+        log "==> Reusing existing TLS certificates..."
+        return
+    fi
+
+    ensure_openssl
+
+    log "==> Generating self-signed TLS certificate for Zaino..."
+    mkdir -p "$REPO_ROOT/config/tls"
+    openssl req -x509 -newkey rsa:4096 \
+        -keyout "$key_path" -out "$cert_path" \
+        -sha256 -days 365 -nodes -subj "/CN=localhost" \
+        -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
+    log "   TLS certificate written to config/tls/zaino.crt"
 }
 
 ensure_openssl() {
@@ -57,14 +81,13 @@ ensure_openssl() {
 }
 
 update_zallet_rpc_pwhash() {
-    local config_path="$SCRIPT_DIR/config/zallet.toml"
+    local config_path="$REPO_ROOT/config/regtest/zallet.toml"
     local rpc_password="${RPC_PASSWORD:-zebra}"
+    local placeholder="__GENERATED_BY_INIT_SH__"
     local salt
     local hash
     local pwhash
     local tmp
-
-    ensure_openssl
 
     if [ ! -f "$config_path" ]; then
         log "Missing zallet config: $config_path"
@@ -76,8 +99,16 @@ update_zallet_rpc_pwhash() {
         exit 1
     fi
 
+    # Skip if already generated (not the placeholder)
+    if ! grep -q "pwhash = \"${placeholder}\"" "$config_path"; then
+        log "==> Zallet RPC pwhash already generated, skipping."
+        return
+    fi
+
+    ensure_openssl
+
     salt="$(openssl rand -hex 16)"
-    hash="$(printf '%s' "$rpc_password" | openssl dgst -sha256 -mac HMAC -macopt "key:$salt" | awk '{print $2}')"
+    hash="$(printf '%s' "$rpc_password" | openssl dgst -sha256 -mac HMAC -macopt "key:$salt" | awk '{print $NF}')"
 
     if [ -z "$hash" ]; then
         log "Failed to generate zallet RPC password hash"
@@ -90,22 +121,27 @@ update_zallet_rpc_pwhash() {
     sed -E "s|^pwhash = \".*\"$|pwhash = \"${pwhash}\"|" "$config_path" > "$tmp"
     mv "$tmp" "$config_path"
 
-    log "==> Updated zallet RPC pwhash in config/zallet.toml"
+    log "==> Generated zallet RPC pwhash in config/regtest/zallet.toml"
 }
 
 # Use sudo for docker if needed
 DOCKER="docker"
 if ! docker info > /dev/null 2>&1; then
     DOCKER="sudo -E docker"
+    COMPOSE="sudo -E $COMPOSE"
 fi
 
-cd "$SCRIPT_DIR"
+cd "$REPO_ROOT"
 
 ensure_local_identity
+ensure_tls_certs
 update_zallet_rpc_pwhash
 
+# Clean up any leftover containers from previous runs
+$COMPOSE down --remove-orphans 2>/dev/null || true
+
 echo "==> Starting Zebra in regtest mode..."
-$DOCKER compose up -d zebra
+$COMPOSE up -d zebra
 
 echo "==> Waiting for Zebra RPC to be ready..."
 until curl -sf -X POST \
@@ -124,27 +160,33 @@ curl -s -u zebra:zebra \
     http://127.0.0.1:18232 | grep -q '"result"'
 echo "   Block mined."
 
+# Volume name includes the project prefix from COMPOSE_PROJECT_NAME
+VOLUME_PREFIX="z3-regtest"
+
 echo "==> Running init-wallet-encryption..."
-# Remove stale lock file if present (left by a previous interrupted run)
-$DOCKER run --rm -v zallet_regtest_data:/data busybox \
-    sh -c 'rm -f /data/.lock'
-# Check if wallet already initialized by looking for the wallet database
-ALREADY_INIT=$($DOCKER run --rm -v zallet_regtest_data:/data busybox \
-    sh -c 'ls /data/*.sqlite /data/*.age 2>/dev/null | wc -l')
+# Remove stale lock file and wallet database if present (left by a previous
+# interrupted run). wallet.db will be recreated with the correct schema by
+# init-wallet-encryption; leaving a stale one causes a schema mismatch error.
+$DOCKER run --rm -v "${VOLUME_PREFIX}_zallet_data:/data" busybox \
+    sh -c 'rm -f /data/.lock /data/wallet.db'
+# Check if wallet already initialized: generate-mnemonic stores an age-encrypted
+# file; if one exists the full init sequence has already completed successfully.
+ALREADY_INIT=$($DOCKER run --rm -v "${VOLUME_PREFIX}_zallet_data:/data" busybox \
+    sh -c 'ls /data/*.age 2>/dev/null | wc -l')
 if [ "${ALREADY_INIT:-0}" -gt 0 ]; then
     echo "   Wallet already initialized, skipping."
 else
-    $DOCKER compose run --rm zallet --datadir /var/lib/zallet init-wallet-encryption
+    $COMPOSE run --rm zallet --datadir /var/lib/zallet --config /etc/zallet/zallet.toml init-wallet-encryption
 
     echo "==> Running generate-mnemonic..."
-    $DOCKER compose run --rm zallet --datadir /var/lib/zallet generate-mnemonic
+    $COMPOSE run --rm zallet --datadir /var/lib/zallet --config /etc/zallet/zallet.toml generate-mnemonic
 fi
 
 echo "==> Stopping Zebra (will be restarted by docker compose up -d)..."
-$DOCKER compose down
+$COMPOSE down
 
 echo ""
-echo "✅ Wallet initialized. Now run:"
-echo "   sudo -E docker compose up -d"
+echo "Wallet initialized. Now run:"
+echo "   docker compose --env-file .env.regtest up -d"
 echo "   # Router will be available at http://127.0.0.1:8181"
 echo "   # Zaino gRPC will be available at 127.0.0.1:8137"
