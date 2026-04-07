@@ -1,0 +1,90 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+permissions: {}
+
+jobs:
+  validate-compose:
+    name: Validate compose configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Generate dummy TLS certs
+        run: |
+          mkdir -p config/tls
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
+            -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+
+      - name: Validate base compose
+        run: docker compose config --quiet
+
+      - name: Validate regtest overlay
+        run: docker compose --env-file .env.regtest config --quiet
+
+  smoke-test:
+    name: Service smoke tests
+    runs-on: ubuntu-latest
+    needs: validate-compose
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Generate dummy TLS certs
+        run: |
+          mkdir -p config/tls
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
+            -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+
+      - name: Extract image refs from compose
+        id: images
+        run: |
+          ZEBRA=$(docker compose config --format json | jq -r '.services.zebra.image')
+          ZAINO=$(docker compose config --format json | jq -r '.services.zaino.image')
+          ZALLET=$(docker compose config --format json | jq -r '.services.zallet.image')
+          echo "zebra=$ZEBRA" >> "$GITHUB_OUTPUT"
+          echo "zaino=$ZAINO" >> "$GITHUB_OUTPUT"
+          echo "zallet=$ZALLET" >> "$GITHUB_OUTPUT"
+
+      - name: Pull images
+        run: |
+          docker pull --platform linux/amd64 "$ZEBRA"
+          docker pull --platform linux/amd64 "$ZAINO"
+          docker pull --platform linux/amd64 "$ZALLET"
+        env:
+          ZEBRA: ${{ steps.images.outputs.zebra }}
+          ZAINO: ${{ steps.images.outputs.zaino }}
+          ZALLET: ${{ steps.images.outputs.zallet }}
+
+      - name: Smoke test Zebra
+        run: docker run --rm --platform linux/amd64 "$ZEBRA" zebrad --help
+        env:
+          ZEBRA: ${{ steps.images.outputs.zebra }}
+
+      - name: Smoke test Zaino
+        run: |
+          # Extract the compose command and verify the binary accepts it.
+          # This is the exact test that would have caught #28 (missing 'start' subcommand).
+          ZAINO_CMD=$(docker compose config --format json | jq -r '.services.zaino.command[0]')
+          echo "Testing: zainod $ZAINO_CMD --help"
+          docker run --rm --platform linux/amd64 --entrypoint zainod "$ZAINO" "$ZAINO_CMD" --help
+        env:
+          ZAINO: ${{ steps.images.outputs.zaino }}
+
+      - name: Smoke test Zallet
+        run: docker run --rm --platform linux/amd64 "$ZALLET" --help
+        env:
+          ZALLET: ${{ steps.images.outputs.zallet }}
