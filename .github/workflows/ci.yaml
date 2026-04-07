@@ -12,31 +12,9 @@ on:
 permissions: {}
 
 jobs:
-  validate-compose:
-    name: Validate compose configs
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          persist-credentials: false
-
-      - name: Generate dummy TLS certs
-        run: |
-          mkdir -p config/tls
-          openssl req -x509 -newkey rsa:2048 \
-            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
-            -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
-
-      - name: Validate base compose
-        run: docker compose config --quiet
-
-      - name: Validate regtest overlay
-        run: docker compose --env-file .env.regtest config --quiet
-
   smoke-test:
     name: Service smoke tests
     runs-on: ubuntu-latest
-    needs: validate-compose
     env:
       COMPOSE_PROJECT_NAME: z3-smoke
       COMPOSE_FILE: docker-compose.yml:docker-compose.regtest.yml
@@ -53,10 +31,14 @@ jobs:
             -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
           chmod 644 config/tls/zaino.key config/tls/zaino.crt
           echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
-          # Generate zallet RPC pwhash
           SALT=$(openssl rand -hex 16)
           HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
           sed -i "s|__GENERATED_BY_INIT_SH__|${SALT}\$${HASH}|" config/regtest/zallet.toml
+
+      - name: Validate compose configs
+        run: |
+          docker compose config --quiet
+          docker compose --env-file .env.regtest config --quiet
 
       - name: Start Zebra (regtest)
         run: |
@@ -75,11 +57,9 @@ jobs:
 
       - name: Verify Zebra is serving RPC
         run: |
-          RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
+          curl -sf -X POST -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-            http://127.0.0.1:18232)
-          echo "$RESULT" | jq .
-          echo "$RESULT" | jq -e '.result.chain' > /dev/null
+            http://127.0.0.1:18232 | jq .
 
       - name: Mine block 1 (required for Zaino sync)
         run: |
@@ -92,11 +72,10 @@ jobs:
           docker compose --env-file .env.regtest up -d zaino
           echo "Waiting for Zaino to be ready..."
           for i in $(seq 1 30); do
-            # Check container is still running (not crashed)
-            STATE=$(docker inspect z3_zaino --format '{{.State.Status}}' 2>/dev/null || echo "missing")
+            STATE=$(docker compose --env-file .env.regtest ps zaino --format json 2>/dev/null | jq -r '.[0].State // "missing"')
             if [ "$STATE" = "exited" ] || [ "$STATE" = "dead" ]; then
               echo "Zaino container died (state: $STATE)"
-              docker logs z3_zaino --tail 20
+              docker compose --env-file .env.regtest logs zaino --tail 20
               exit 1
             fi
             if bash -c 'echo > /dev/tcp/127.0.0.1/8237' 2>/dev/null; then
@@ -119,10 +98,7 @@ jobs:
           echo "$RESULT" | jq -e '.result.chain' > /dev/null
 
       - name: Verify Zallet accepts compose command
-        run: |
-          # Zallet requires wallet init before starting, so verify the binary
-          # accepts its compose command structure (--datadir, --config, start).
-          docker compose --env-file .env.regtest run --rm --no-deps zallet --help
+        run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
 
       - name: Collect logs on failure
         if: failure()
