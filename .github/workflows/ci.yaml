@@ -51,6 +51,7 @@ jobs:
           openssl req -x509 -newkey rsa:2048 \
             -keyout config/tls/zaino.key -out config/tls/zaino.crt \
             -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+          chmod 644 config/tls/zaino.key config/tls/zaino.crt
           echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
           # Generate zallet RPC pwhash
           SALT=$(openssl rand -hex 16)
@@ -89,10 +90,17 @@ jobs:
       - name: Start Zaino
         run: |
           docker compose --env-file .env.regtest up -d zaino
-          echo "Waiting for Zaino gRPC port..."
+          echo "Waiting for Zaino to be ready..."
           for i in $(seq 1 30); do
-            if bash -c 'echo > /dev/tcp/127.0.0.1/8137' 2>/dev/null; then
-              echo "Zaino is listening on gRPC port 8137"
+            # Check container is still running (not crashed)
+            STATE=$(docker inspect z3_zaino --format '{{.State.Status}}' 2>/dev/null || echo "missing")
+            if [ "$STATE" = "exited" ] || [ "$STATE" = "dead" ]; then
+              echo "Zaino container died (state: $STATE)"
+              docker logs z3_zaino --tail 20
+              exit 1
+            fi
+            if bash -c 'echo > /dev/tcp/127.0.0.1/8237' 2>/dev/null; then
+              echo "Zaino JSON-RPC is listening on port 8237"
               break
             fi
             if [ "$i" -eq 30 ]; then echo "Zaino failed to start" && exit 1; fi

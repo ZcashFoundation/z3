@@ -35,6 +35,7 @@ jobs:
           openssl req -x509 -newkey rsa:2048 \
             -keyout config/tls/zaino.key -out config/tls/zaino.crt \
             -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+          chmod 644 config/tls/zaino.key config/tls/zaino.crt
 
       - name: Generate zallet identity
         run: |
