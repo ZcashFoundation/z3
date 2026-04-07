@@ -64,7 +64,7 @@ Update `config/zallet.toml` to set `network = "test"` in the `[consensus]` secti
 
 ### Running Regtest
 
-Regtest uses a compose overlay (`docker-compose.regtest.yml`) that adds the rpc-router service, disables TLS, and adjusts healthchecks for a peerless network. Volumes are automatically isolated via `COMPOSE_PROJECT_NAME=z3-regtest`.
+Regtest uses a compose overlay (`docker-compose.regtest.yml`) that adds the rpc-router service, switches from cookie auth to username/password auth, and adjusts healthchecks for a peerless network. Volumes are automatically isolated via `COMPOSE_PROJECT_NAME=z3-regtest`.
 
 First-time setup (**required** before starting the stack):
 

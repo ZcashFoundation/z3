@@ -1,0 +1,101 @@
+name: CI
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+permissions: {}
+
+jobs:
+  smoke-test:
+    name: Service smoke tests
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_PROJECT_NAME: z3-smoke
+      COMPOSE_FILE: docker-compose.yml:docker-compose.regtest.yml
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Generate TLS certs and regtest configs
+        run: |
+          mkdir -p config/tls config/regtest
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
+            -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+          chmod 644 config/tls/zaino.key config/tls/zaino.crt
+          echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
+          SALT=$(openssl rand -hex 16)
+          HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
+          sed -i "s|__GENERATED_BY_INIT_SH__|${SALT}\$${HASH}|" config/regtest/zallet.toml
+
+      - name: Validate compose configs
+        run: |
+          docker compose config --quiet
+          docker compose --env-file .env.regtest config --quiet
+
+      - name: Start Zebra (regtest)
+        run: |
+          docker compose --env-file .env.regtest up -d zebra
+          echo "Waiting for Zebra RPC..."
+          for i in $(seq 1 60); do
+            if curl -sf -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+              http://127.0.0.1:18232 > /dev/null 2>&1; then
+              echo "Zebra is ready"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then echo "Zebra failed to start" && exit 1; fi
+            sleep 2
+          done
+
+      - name: Verify Zebra is serving RPC
+        run: |
+          curl -sf -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+            http://127.0.0.1:18232 | jq .
+
+      - name: Mine block 1 (required for Zaino sync)
+        run: |
+          curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
+            -d '{"jsonrpc":"2.0","method":"generate","params":[1],"id":1}' \
+            http://127.0.0.1:18232 | jq .
+
+      - name: Start Zaino and verify JSON-RPC proxy
+        run: |
+          docker compose --env-file .env.regtest up -d zaino
+          echo "Waiting for Zaino JSON-RPC..."
+          for i in $(seq 1 30); do
+            if RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+              http://127.0.0.1:8237 2>/dev/null); then
+              echo "Zaino is ready"
+              echo "$RESULT" | jq .
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Zaino failed to start"
+              docker compose --env-file .env.regtest logs zaino --tail 20
+              exit 1
+            fi
+            sleep 2
+          done
+
+      - name: Verify Zallet accepts compose command
+        run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Zebra logs ==="
+          docker compose --env-file .env.regtest logs zebra --tail 50 2>&1 || true
+          echo "=== Zaino logs ==="
+          docker compose --env-file .env.regtest logs zaino --tail 50 2>&1 || true
+          echo "=== Container status ==="
+          docker compose --env-file .env.regtest ps 2>&1 || true
