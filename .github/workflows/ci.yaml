@@ -99,7 +99,3 @@ jobs:
           docker compose --env-file .env.regtest logs zaino --tail 50 2>&1 || true
           echo "=== Container status ==="
           docker compose --env-file .env.regtest ps 2>&1 || true
-
-      - name: Teardown
-        if: always()
-        run: docker compose --env-file .env.regtest down --volumes 2>/dev/null || true
