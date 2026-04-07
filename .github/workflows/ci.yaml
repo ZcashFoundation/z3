@@ -109,9 +109,12 @@ jobs:
 
       - name: Verify Zaino JSON-RPC proxy
         run: |
-          RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
-            -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-            http://127.0.0.1:8237)
+          for i in $(seq 1 15); do
+            RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+              http://127.0.0.1:8237 2>/dev/null) && break
+            sleep 2
+          done
           echo "$RESULT" | jq .
           echo "$RESULT" | jq -e '.result.chain' > /dev/null
 
