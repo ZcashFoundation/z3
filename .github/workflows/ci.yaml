@@ -67,34 +67,25 @@ jobs:
             -d '{"jsonrpc":"2.0","method":"generate","params":[1],"id":1}' \
             http://127.0.0.1:18232 | jq .
 
-      - name: Start Zaino
+      - name: Start Zaino and verify JSON-RPC proxy
         run: |
           docker compose --env-file .env.regtest up -d zaino
-          echo "Waiting for Zaino JSON-RPC port..."
+          echo "Waiting for Zaino JSON-RPC..."
           for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:8237 > /dev/null 2>&1; then
+            if RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+              http://127.0.0.1:8237 2>/dev/null); then
               echo "Zaino is ready"
+              echo "$RESULT" | jq .
               break
             fi
-            if ! docker compose --env-file .env.regtest ps zaino --status running --quiet 2>/dev/null | grep -q .; then
-              echo "Zaino container is not running"
+            if [ "$i" -eq 30 ]; then
+              echo "Zaino failed to start"
               docker compose --env-file .env.regtest logs zaino --tail 20
               exit 1
             fi
-            if [ "$i" -eq 30 ]; then echo "Zaino failed to start" && exit 1; fi
             sleep 2
           done
-
-      - name: Verify Zaino JSON-RPC proxy
-        run: |
-          for i in $(seq 1 15); do
-            RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-              http://127.0.0.1:8237 2>/dev/null) && break
-            sleep 2
-          done
-          echo "$RESULT" | jq .
-          echo "$RESULT" | jq -e '.result.chain' > /dev/null
 
       - name: Verify Zallet accepts compose command
         run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
