@@ -14,7 +14,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.2.0}
+    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.0}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zebra
@@ -64,7 +64,10 @@ services:
       start_interval: 5s
 
   zaino:
-    image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-0164cab}
+    # Image built by z3 CI from zingolabs/zaino@dev branch.
+    # The sha-* tag is a z3 commit hash, not a zaino one.
+    # Upstream: https://github.com/zingolabs/zaino (zainod 0.2.0 / Zebra 4.3.0 compatible)
+    image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
@@ -76,7 +79,7 @@ services:
     # Zaino's entrypoint runs mkdir/chown before dropping privileges via setpriv.
     # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
-    command: ["--config", "/etc/zaino/zindexer.toml"]
+    command: ["start", "--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
         condition: service_healthy
