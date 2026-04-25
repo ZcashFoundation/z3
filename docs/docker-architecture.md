@@ -201,7 +201,7 @@ All service images are overridable via environment variables:
 image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
 image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
 image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
-image: ${ZCASHD_IMAGE:-electriccoinco/zcashd:latest}
+image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
 ```
 
 This allows operators to:

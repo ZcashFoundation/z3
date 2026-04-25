@@ -62,7 +62,7 @@ For local compatibility checks against zcashd, start the profiled zcashd service
 docker compose --env-file .env.regtest --profile zcashd up -d zcashd
 ```
 
-The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses separate Docker volumes (`zcashd_data`, `zcashd_params`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
+The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses a separate Docker volume (`zcashd_data`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
 
 For comparator runs that need a specific upgrade era, override the zcashd activation heights and use a separate data volume:
 

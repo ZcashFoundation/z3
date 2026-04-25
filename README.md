@@ -82,7 +82,7 @@ See [docs/regtest.md](docs/regtest.md) for test commands (curl, grpcurl) and the
 
 ### Optional zcashd Comparator
 
-`zcashd` is available behind an opt-in Compose profile for local comparison tests. It is not part of the default Z3 stack, uses separate data and params volumes, exposes RPC on `http://localhost:38232`, and starts with public P2P disabled (`-listen=0 -connect=0`).
+`zcashd` is available behind an opt-in Compose profile for local comparison tests. It is not part of the default Z3 stack, uses a separate data volume, exposes RPC on `http://localhost:38232`, and starts with public P2P disabled (`-listen=0 -connect=0`).
 
 ```bash
 # Mainnet/testnet-style comparator
@@ -92,7 +92,7 @@ docker compose --profile zcashd up -d zcashd
 docker compose --env-file .env.regtest --profile zcashd up -d zcashd
 ```
 
-The default image is the official `electriccoinco/zcashd:latest` image. Default RPC credentials are `zebra` / `zebra`; override them with `ZCASHD_RPCUSER` and `ZCASHD_RPCPASSWORD`. For custom regtest runs, zcashd activation heights can be overridden with `ZCASHD_*_ACTIVATION_HEIGHT` variables; use a separate `Z3_ZCASHD_DATA_PATH` when changing them.
+The default image is `zodlinc/zcashd:v6.12.1`. Default RPC credentials are `zebra` / `zebra`; override them with `ZCASHD_RPCUSER` and `ZCASHD_RPCPASSWORD`. For custom regtest runs, zcashd activation heights can be overridden with `ZCASHD_*_ACTIVATION_HEIGHT` variables; use a separate `Z3_ZCASHD_DATA_PATH` when changing them.
 
 ### Monitoring Stack
 
@@ -143,7 +143,7 @@ All images can be overridden via environment variables (`ZEBRA_IMAGE`, `ZAINO_IM
 | Zebra | `zfnd/zebra:4.3.1` | [ZcashFoundation/zebra](https://github.com/ZcashFoundation/zebra) |
 | Zaino | `ghcr.io/zcashfoundation/zaino:sha-83e41d7` | [zingolabs/zaino](https://github.com/zingolabs/zaino) |
 | Zallet | `electriccoinco/zallet:v0.1.0-alpha.3` | [zcash/wallet](https://github.com/zcash/wallet) |
-| zcashd | `electriccoinco/zcashd:latest` | [zcash/zcash](https://github.com/zcash/zcash) |
+| zcashd | `zodlinc/zcashd:v6.12.1` | [zcash/zcash](https://github.com/zcash/zcash) |
 
 ## Prerequisites
 
@@ -264,7 +264,7 @@ Z3 defaults to AMD64 for consistency. On Apple Silicon or ARM64 Linux, enable na
 echo "DOCKER_PLATFORM=linux/arm64" >> .env
 ```
 
-The optional zcashd service has a separate `ZCASHD_DOCKER_PLATFORM` setting. Keep the default `linux/amd64` when using `electriccoinco/zcashd:latest`; Docker Desktop runs it through emulation on Apple Silicon. Only set `ZCASHD_DOCKER_PLATFORM=linux/arm64` when `ZCASHD_IMAGE` points to an arm64-capable image.
+The optional zcashd service has a separate `ZCASHD_DOCKER_PLATFORM` setting. Keep the default `linux/amd64` when using `zodlinc/zcashd:v6.12.1`; Docker Desktop runs it through emulation on Apple Silicon. Only set `ZCASHD_DOCKER_PLATFORM=linux/arm64` when `ZCASHD_IMAGE` points to an arm64-capable image.
 
 </details>
 
@@ -326,7 +326,6 @@ The stack uses Docker-managed named volumes by default:
 | `zaino_data` | Indexer database |
 | `zallet_data` | Wallet database |
 | `zcashd_data` | Optional zcashd comparator chain state |
-| `zcashd_params` | Optional zcashd comparator params cache |
 | `shared_cookie_volume` | RPC authentication cookies |
 
 ### Local Directories (Advanced)
@@ -337,6 +336,7 @@ For backups, external SSDs, or shared storage, override volume paths in `.env`:
 Z3_ZEBRA_DATA_PATH=/mnt/ssd/zebra-state
 Z3_ZAINO_DATA_PATH=/mnt/ssd/zaino-data
 Z3_ZALLET_DATA_PATH=/mnt/ssd/zallet-data
+Z3_ZCASHD_DATA_PATH=/mnt/ssd/zcashd-data
 ```
 
 Fix permissions before starting:
@@ -345,9 +345,10 @@ Fix permissions before starting:
 ./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state
 ./scripts/fix-permissions.sh zaino /mnt/ssd/zaino-data
 ./scripts/fix-permissions.sh zallet /mnt/ssd/zallet-data
+./scripts/fix-permissions.sh zcashd /mnt/ssd/zcashd-data
 ```
 
-Zebra, Zaino, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and 700 permissions. Never use 755 or 777.
+Zebra, Zaino, Zallet, and zcashd each run as a specific non-root user. Directories must have correct ownership (set by the script) and 700 permissions. Never use 755 or 777.
 
 </details>
 

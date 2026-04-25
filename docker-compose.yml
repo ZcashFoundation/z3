@@ -150,21 +150,29 @@ services:
     # Optional zcashd node. It is intentionally isolated from the
     # public P2P network unless the operator overrides the command.
     profiles: [zcashd]
-    image: ${ZCASHD_IMAGE:-electriccoinco/zcashd:latest}
-    # The official zcashd image currently publishes linux/amd64 only.
+    image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
+    # The default zcashd image currently publishes linux/amd64 only.
     platform: ${ZCASHD_DOCKER_PLATFORM:-linux/amd64}
     container_name: z3_zcashd
     restart: unless-stopped
     stop_grace_period: 30s
     <<: *common
-    user: "2001:2001"
+    user: "999:999"
     command:
+      - zcashd
+      - -conf=/dev/null
+      - -printtoconsole
       - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
       - -listen=0
       - -dnsseed=0
       - -dns=0
       - -connect=0
       - -server=1
+      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
+      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
+      - -rpcbind=0.0.0.0
+      - -rpcport=${ZCASHD_RPC_PORT:-38232}
+      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
     environment:
       ZCASHD_RPCUSER: ${ZCASHD_RPCUSER:-zebra}
       ZCASHD_RPCPASSWORD: ${ZCASHD_RPCPASSWORD:-zebra}
@@ -172,14 +180,13 @@ services:
       ZCASHD_RPCPORT: ${ZCASHD_RPC_PORT:-38232}
       ZCASHD_ALLOWIP: ${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
     volumes:
-      - ${Z3_ZCASHD_DATA_PATH:-zcashd_data}:/srv/zcashd/.zcash
-      - ${Z3_ZCASHD_PARAMS_PATH:-zcashd_params}:/srv/zcashd/.zcash-params
+      - ${Z3_ZCASHD_DATA_PATH:-zcashd_data}:/home/zcash/.zcash
     ports:
       - "${ZCASHD_HOST_RPC_BIND:-127.0.0.1}:${ZCASHD_HOST_RPC_PORT:-38232}:${ZCASHD_RPC_PORT:-38232}"
     networks:
       - z3_net
     healthcheck:
-      test: ["CMD-SHELL", "zcash-cli -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
+      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -302,7 +309,6 @@ services:
 volumes:
   zebra_data:
   zcashd_data:
-  zcashd_params:
   zaino_data:
   zallet_data:
   shared_cookie_volume:

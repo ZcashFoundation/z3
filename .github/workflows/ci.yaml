@@ -28,7 +28,8 @@ jobs:
           mkdir -p config/tls config/regtest
           openssl req -x509 -newkey rsa:2048 \
             -keyout config/tls/zaino.key -out config/tls/zaino.crt \
-            -sha256 -days 1 -nodes -subj "/CN=localhost" 2>/dev/null
+            -sha256 -days 1 -nodes -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
           chmod 644 config/tls/zaino.key config/tls/zaino.crt
           echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
           SALT=$(openssl rand -hex 16)
@@ -39,6 +40,7 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose --env-file .env.regtest config --quiet
+          docker compose --env-file .env.regtest --profile zcashd config --quiet
 
       - name: Start Zebra (regtest)
         run: |
@@ -87,6 +89,26 @@ jobs:
             sleep 2
           done
 
+      - name: Start zcashd comparator and verify RPC
+        run: |
+          docker compose --env-file .env.regtest --profile zcashd up -d zcashd
+          echo "Waiting for zcashd RPC..."
+          for i in $(seq 1 30); do
+            if RESULT=$(curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
+              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
+              http://127.0.0.1:38232 2>/dev/null); then
+              echo "zcashd is ready"
+              echo "$RESULT" | jq .
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "zcashd failed to start"
+              docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50
+              exit 1
+            fi
+            sleep 2
+          done
+
       - name: Verify Zallet accepts compose command
         run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
 
@@ -97,5 +119,7 @@ jobs:
           docker compose --env-file .env.regtest logs zebra --tail 50 2>&1 || true
           echo "=== Zaino logs ==="
           docker compose --env-file .env.regtest logs zaino --tail 50 2>&1 || true
+          echo "=== zcashd logs ==="
+          docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50 2>&1 || true
           echo "=== Container status ==="
-          docker compose --env-file .env.regtest ps 2>&1 || true
+          docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
