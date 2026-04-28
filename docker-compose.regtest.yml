@@ -44,6 +44,39 @@ services:
       - ./config/regtest/zallet.toml:/etc/zallet/zallet.toml:ro
       - ./config/regtest/zallet_identity.txt:/etc/zallet/identity.txt:ro
 
+  zcashd:
+    # Optional comparator for local compatibility checks. Keep it isolated
+    # from P2P in regtest. Activation heights default to config/regtest/zallet.toml
+    # but can be overridden for custom regtest runs.
+    command:
+      - zcashd
+      - -conf=/dev/null
+      - -printtoconsole
+      - -regtest
+      - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
+      - -listen=0
+      - -dnsseed=0
+      - -dns=0
+      - -connect=0
+      - -server=1
+      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
+      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
+      - -rpcbind=0.0.0.0
+      - -rpcport=${ZCASHD_RPC_PORT:-38232}
+      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
+      - -nuparams=5ba81b19:${ZCASHD_OVERWINTER_ACTIVATION_HEIGHT:-1}
+      - -nuparams=76b809bb:${ZCASHD_SAPLING_ACTIVATION_HEIGHT:-1}
+      - -nuparams=2bb40e60:${ZCASHD_BLOSSOM_ACTIVATION_HEIGHT:-1}
+      - -nuparams=f5b9230b:${ZCASHD_HEARTWOOD_ACTIVATION_HEIGHT:-1}
+      - -nuparams=e9ff75a6:${ZCASHD_CANOPY_ACTIVATION_HEIGHT:-1}
+      - -nuparams=c2d6d0b4:${ZCASHD_NU5_ACTIVATION_HEIGHT:-1}
+    healthcheck:
+      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -regtest -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   rpc-router:
     build:
       context: ./rpc-router

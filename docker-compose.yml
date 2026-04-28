@@ -14,7 +14,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.0}
+    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zebra
@@ -146,6 +146,52 @@ services:
       - z3_net
     # No healthcheck: distroless image has no shell/curl
 
+  zcashd:
+    # Optional zcashd node. It is intentionally isolated from the
+    # public P2P network unless the operator overrides the command.
+    profiles: [zcashd]
+    image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
+    # The default zcashd image currently publishes linux/amd64 only.
+    platform: ${ZCASHD_DOCKER_PLATFORM:-linux/amd64}
+    container_name: z3_zcashd
+    restart: unless-stopped
+    stop_grace_period: 30s
+    <<: *common
+    user: "999:999"
+    command:
+      - zcashd
+      - -conf=/dev/null
+      - -printtoconsole
+      - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
+      - -listen=0
+      - -dnsseed=0
+      - -dns=0
+      - -connect=0
+      - -server=1
+      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
+      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
+      - -rpcbind=0.0.0.0
+      - -rpcport=${ZCASHD_RPC_PORT:-38232}
+      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
+    environment:
+      ZCASHD_RPCUSER: ${ZCASHD_RPCUSER:-zebra}
+      ZCASHD_RPCPASSWORD: ${ZCASHD_RPCPASSWORD:-zebra}
+      ZCASHD_RPCBIND: 0.0.0.0
+      ZCASHD_RPCPORT: ${ZCASHD_RPC_PORT:-38232}
+      ZCASHD_ALLOWIP: ${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
+    volumes:
+      - ${Z3_ZCASHD_DATA_PATH:-zcashd_data}:/home/zcash/.zcash
+    ports:
+      - "${ZCASHD_HOST_RPC_BIND:-127.0.0.1}:${ZCASHD_HOST_RPC_PORT:-38232}:${ZCASHD_RPC_PORT:-38232}"
+    networks:
+      - z3_net
+    healthcheck:
+      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+
   # =============================================================================
   # Monitoring Stack (enabled with --profile monitoring)
   # =============================================================================
@@ -262,6 +308,7 @@ services:
 
 volumes:
   zebra_data:
+  zcashd_data:
   zaino_data:
   zallet_data:
   shared_cookie_volume:

@@ -52,6 +52,27 @@ Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source
 | Zaino gRPC | https://localhost:8137 | lightwalletd-compatible gRPC (TLS) |
 | Zebra RPC | http://localhost:18232 | Direct Zebra JSON-RPC |
 | Zallet RPC | http://localhost:28232 | Direct Zallet JSON-RPC |
+| zcashd RPC | http://localhost:38232 | Optional zcashd comparator (`--profile zcashd`) |
+
+## Optional zcashd comparator
+
+For local compatibility checks against zcashd, start the profiled zcashd service:
+
+```bash
+docker compose --env-file .env.regtest --profile zcashd up -d zcashd
+```
+
+The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses a separate Docker volume (`zcashd_data`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
+
+For comparator runs that need a specific upgrade era, override the zcashd activation heights and use a separate data volume:
+
+```bash
+Z3_ZCASHD_DATA_PATH=./.tmp/zcashd-canopy-data \
+ZCASHD_NU5_ACTIVATION_HEIGHT=100 \
+docker compose --env-file .env.regtest --profile zcashd up -d --force-recreate zcashd
+```
+
+This keeps the default Z3 regtest state separate from comparator state and allows V4/Canopy fixtures before NU5 activation.
 
 ## Test routing
 
@@ -159,4 +180,5 @@ The port (9999) must match the Prometheus scrape target configured in `observabi
 - Zallet uses regtest nuparams activating all upgrades at block 1
 - Zaino uses username/password auth in regtest (not cookie auth)
 - Zaino gRPC uses TLS with the same self-signed certificate as mainnet/testnet
+- zcashd is optional and only starts when the `zcashd` profile is enabled
 - The rpc-router source is in `rpc-router/`; it is built automatically on first `docker compose up`

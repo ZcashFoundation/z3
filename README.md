@@ -40,7 +40,7 @@ docker compose ps    # verify all healthy
 ```
 
 > [!TIP]
-> **Apple Silicon users:** Create `.env` with `DOCKER_PLATFORM=linux/arm64` for native builds.
+> **Apple Silicon users:** Set `DOCKER_PLATFORM=linux/arm64` for native Z3 services. The optional zcashd profile has a separate platform setting.
 
 ## Deployment Modes
 
@@ -79,6 +79,20 @@ docker compose --env-file .env.regtest up -d
 The init script generates the Zallet RPC password hash, starts Zebra, mines the first block, and initializes the Zallet wallet. It is safe to re-run — it skips steps that are already done. Subsequent runs only need the last command.
 
 See [docs/regtest.md](docs/regtest.md) for test commands (curl, grpcurl) and the full workflow reference.
+
+### Optional zcashd Comparator
+
+`zcashd` is available behind an opt-in Compose profile for local comparison tests. It is not part of the default Z3 stack, uses a separate data volume, exposes RPC on `http://localhost:38232`, and starts with public P2P disabled (`-listen=0 -connect=0`).
+
+```bash
+# Mainnet/testnet-style comparator
+docker compose --profile zcashd up -d zcashd
+
+# Regtest comparator with the regtest overlay
+docker compose --env-file .env.regtest --profile zcashd up -d zcashd
+```
+
+The default image is `zodlinc/zcashd:v6.12.1`. Default RPC credentials are `zebra` / `zebra`; override them with `ZCASHD_RPCUSER` and `ZCASHD_RPCPASSWORD`. For custom regtest runs, zcashd activation heights can be overridden with `ZCASHD_*_ACTIVATION_HEIGHT` variables; use a separate `Z3_ZCASHD_DATA_PATH` when changing them.
 
 ### Monitoring Stack
 
@@ -122,13 +136,14 @@ graph LR
 
 **Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients like Zingo. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service.
 
-All images can be overridden via environment variables (`ZEBRA_IMAGE`, `ZAINO_IMAGE`, `ZALLET_IMAGE`). See `.env.example` for all available options.
+All images can be overridden via environment variables (`ZEBRA_IMAGE`, `ZAINO_IMAGE`, `ZALLET_IMAGE`, `ZCASHD_IMAGE`). See `.env.example` for all available options.
 
 | Service | Default Image | Source |
 |---------|---------------|--------|
-| Zebra | `zfnd/zebra:4.3.0` | [ZcashFoundation/zebra](https://github.com/ZcashFoundation/zebra) |
+| Zebra | `zfnd/zebra:4.3.1` | [ZcashFoundation/zebra](https://github.com/ZcashFoundation/zebra) |
 | Zaino | `ghcr.io/zcashfoundation/zaino:sha-83e41d7` | [zingolabs/zaino](https://github.com/zingolabs/zaino) |
 | Zallet | `electriccoinco/zallet:v0.1.0-alpha.3` | [zcash/wallet](https://github.com/zcash/wallet) |
+| zcashd | `zodlinc/zcashd:v6.12.1` | [zcash/zcash](https://github.com/zcash/zcash) |
 
 ## Prerequisites
 
@@ -150,6 +165,7 @@ Once running, services are available at:
 | Zaino gRPC | `localhost:8137` | `ZAINO_HOST_GRPC_PORT` |
 | Zaino JSON-RPC | `http://localhost:8237` | `ZAINO_HOST_JSONRPC_PORT` |
 | Zallet RPC | `http://localhost:28232` | `ZALLET_HOST_RPC_PORT` |
+| zcashd RPC | `http://localhost:38232` | `ZCASHD_HOST_RPC_PORT` |
 
 ## Stopping the Stack
 
@@ -242,11 +258,13 @@ Critical requirements for `config/zallet.toml`:
 
 ### Platform Configuration (ARM64)
 
-Z3 defaults to AMD64 for consistency. On Apple Silicon or ARM64 Linux, emulation makes builds ~15x slower. Enable native builds:
+Z3 defaults to AMD64 for consistency. On Apple Silicon or ARM64 Linux, enable native Zebra, Zaino, and Zallet images:
 
 ```bash
 echo "DOCKER_PLATFORM=linux/arm64" >> .env
 ```
+
+The optional zcashd service has a separate `ZCASHD_DOCKER_PLATFORM` setting. Keep the default `linux/amd64` when using `zodlinc/zcashd:v6.12.1`; Docker Desktop runs it through emulation on Apple Silicon. Only set `ZCASHD_DOCKER_PLATFORM=linux/arm64` when `ZCASHD_IMAGE` points to an arm64-capable image.
 
 </details>
 
@@ -307,6 +325,7 @@ The stack uses Docker-managed named volumes by default:
 | `zebra_data` | Blockchain state (~300 GB mainnet, ~30 GB testnet) |
 | `zaino_data` | Indexer database |
 | `zallet_data` | Wallet database |
+| `zcashd_data` | Optional zcashd comparator chain state |
 | `shared_cookie_volume` | RPC authentication cookies |
 
 ### Local Directories (Advanced)
@@ -317,6 +336,7 @@ For backups, external SSDs, or shared storage, override volume paths in `.env`:
 Z3_ZEBRA_DATA_PATH=/mnt/ssd/zebra-state
 Z3_ZAINO_DATA_PATH=/mnt/ssd/zaino-data
 Z3_ZALLET_DATA_PATH=/mnt/ssd/zallet-data
+Z3_ZCASHD_DATA_PATH=/mnt/ssd/zcashd-data
 ```
 
 Fix permissions before starting:
@@ -325,9 +345,10 @@ Fix permissions before starting:
 ./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state
 ./scripts/fix-permissions.sh zaino /mnt/ssd/zaino-data
 ./scripts/fix-permissions.sh zallet /mnt/ssd/zallet-data
+./scripts/fix-permissions.sh zcashd /mnt/ssd/zcashd-data
 ```
 
-Each service runs as a specific non-root user. Directories must have correct ownership (set by the script) and 700 permissions. Never use 755 or 777.
+Zebra, Zaino, Zallet, and zcashd each run as a specific non-root user. Directories must have correct ownership (set by the script) and 700 permissions. Never use 755 or 777.
 
 </details>
 

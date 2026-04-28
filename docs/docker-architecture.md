@@ -5,7 +5,7 @@ This document explains the architectural decisions, patterns, and modern Docker 
 ## Overview
 
 ```text
-docker-compose.yml              Base stack (Zebra + Zaino + Zallet + monitoring)
+docker-compose.yml              Base stack (Zebra + Zaino + Zallet + optional profiles)
 docker-compose.regtest.yml      Regtest overlay (structural differences only)
 .env.example                    Reference for all overridable variables
 .env                            User overrides (gitignored, optional)
@@ -23,7 +23,7 @@ The core principle: **`docker-compose.yml` is self-sufficient**. Every variable 
 Every variable reference in `docker-compose.yml` includes a default value:
 
 ```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:4.2.0}
+image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
 environment:
   ZEBRA_NETWORK__NETWORK: ${NETWORK_NAME:-Mainnet}
 volumes:
@@ -198,9 +198,10 @@ Without `max-size` and `max-file`, Docker's default `json-file` log driver grows
 All service images are overridable via environment variables:
 
 ```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:4.2.0}
-image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-0164cab}
+image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
+image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
 image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
+image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
 ```
 
 This allows operators to:

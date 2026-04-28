@@ -38,5 +38,8 @@ config/tls/*
 # Runtime environment overrides (see .env.example for available variables)
 .env
 
+# Local comparator state
+.tmp/
+
 # Ignore docker compose overrides
 docker-compose.override.yml
