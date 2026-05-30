@@ -7,7 +7,7 @@ concurrency:
 on:
   pull_request:
   push:
-    branches: [dev]
+    branches: [main]
 
 permissions: {}
 

@@ -45,6 +45,11 @@ on:
         required: false
         type: boolean
         default: false
+      read_rust_version:
+        description: "Read RUST_VERSION from rust-toolchain.toml in the checked-out upstream repo and pass it as a build-arg"
+        required: false
+        type: boolean
+        default: false
 
     outputs:
       image_digest:
@@ -79,6 +84,31 @@ jobs:
           repository: ${{ inputs.repository }}
           ref: ${{ inputs.ref }}
           persist-credentials: false
+
+      - name: Read RUST_VERSION from rust-toolchain.toml
+        if: ${{ inputs.read_rust_version }}
+        id: rust_version
+        env:
+          UPSTREAM_REPO: ${{ inputs.repository }}
+          UPSTREAM_REF: ${{ inputs.ref }}
+        run: |
+          set -euo pipefail
+          if [[ ! -f rust-toolchain.toml ]]; then
+            echo "rust-toolchain.toml not found in ${UPSTREAM_REPO}@${UPSTREAM_REF}" >&2
+            exit 1
+          fi
+          channel=$(grep -E '^[[:space:]]*channel[[:space:]]*=' rust-toolchain.toml \
+            | head -n1 \
+            | sed -E 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/')
+          if [[ -z "$channel" ]]; then
+            echo "no [toolchain].channel found in rust-toolchain.toml" >&2
+            exit 1
+          fi
+          if [[ ! "$channel" =~ ^[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "channel '$channel' is not a concrete numeric version (x.y or x.y.z)" >&2
+            exit 1
+          fi
+          echo "rust_version=$channel" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Z3
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -139,6 +169,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             SHORT_SHA=${{ env.GITHUB_SHA_SHORT }}
+            ${{ inputs.read_rust_version && format('RUST_VERSION={0}', steps.rust_version.outputs.rust_version) || '' }}
           push: true
           # It's recommended to build images with max-level provenance attestations
           # https://docs.docker.com/build/ci/github-actions/attestations/

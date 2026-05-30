@@ -2,7 +2,7 @@ name: GitHub Actions security analysis
 
 on:
   push:
-    branches: [dev]
+    branches: [main]
     paths:
       - '.github/workflows/**'
   pull_request:

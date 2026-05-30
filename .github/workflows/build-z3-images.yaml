@@ -14,7 +14,7 @@ on:
         default: false
   push:
     branches:
-      - dev
+      - main
     paths:
       - '.github/workflows/build-z3-images.yaml'
 
@@ -58,6 +58,7 @@ jobs:
       rust_backtrace: full
       rust_lib_backtrace: full
       rust_log: info
+      read_rust_version: true
 
   build-zallet:
     name: Build zallet Docker
