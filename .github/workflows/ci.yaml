@@ -125,3 +125,20 @@ jobs:
           docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50 2>&1 || true
           echo "=== Container status ==="
           docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
+
+  rpc-router-tests:
+    name: rpc-router cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install 1.85 --profile minimal --no-self-update
+          rustup default 1.85
+
+      - name: cargo test
+        working-directory: rpc-router
+        run: cargo test --locked --all-targets
