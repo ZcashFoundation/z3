@@ -88,10 +88,13 @@ jobs:
       - name: Read RUST_VERSION from rust-toolchain.toml
         if: ${{ inputs.read_rust_version }}
         id: rust_version
+        env:
+          UPSTREAM_REPO: ${{ inputs.repository }}
+          UPSTREAM_REF: ${{ inputs.ref }}
         run: |
           set -euo pipefail
           if [[ ! -f rust-toolchain.toml ]]; then
-            echo "rust-toolchain.toml not found in ${{ inputs.repository }}@${{ inputs.ref }}" >&2
+            echo "rust-toolchain.toml not found in ${UPSTREAM_REPO}@${UPSTREAM_REF}" >&2
             exit 1
           fi
           channel=$(grep -E '^[[:space:]]*channel[[:space:]]*=' rust-toolchain.toml \
