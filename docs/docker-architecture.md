@@ -23,7 +23,7 @@ The core principle: **`docker-compose.yml` is self-sufficient**. Every variable 
 Every variable reference in `docker-compose.yml` includes a default value:
 
 ```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
+image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
 environment:
   ZEBRA_NETWORK__NETWORK: ${NETWORK_NAME:-Mainnet}
 volumes:
@@ -198,7 +198,7 @@ Without `max-size` and `max-file`, Docker's default `json-file` log driver grows
 All service images are overridable via environment variables:
 
 ```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
+image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
 image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
 image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
 image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
