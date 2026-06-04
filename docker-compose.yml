@@ -14,7 +14,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${ZEBRA_IMAGE:-zfnd/zebra:4.3.1}
+    image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zebra
