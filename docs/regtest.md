@@ -6,7 +6,7 @@ Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and
 
 ## Prerequisites
 
-- Docker with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.0+)
+- Docker with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
 - [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys
 - TLS certificates generated (see Quick Start in the main [README](../README.md))
 - For gRPC testing: [grpcurl](https://github.com/fullstorydev/grpcurl) and the zaino submodule initialized (`git submodule update --init zaino`)
@@ -21,16 +21,17 @@ From the repo root:
 
 This will:
 
-1. Generate a Zallet encryption identity (if not already present)
-2. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
-3. Start Zebra in regtest mode
-4. Mine 1 block (activates Orchard at height 1)
-5. Initialize the Zallet wallet (`init-wallet-encryption` + `generate-mnemonic`)
+1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zallet.toml`) into live gitignored files
+2. Generate a Zallet encryption identity (if not already present)
+3. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
+4. Start Zebra in regtest mode with the activation heights Zaino expects (Canopy at 1, NU5/Orchard at 2)
+5. Mine 2 blocks to activate Orchard
+6. Initialize the Zallet wallet (`init-wallet-encryption` + `generate-mnemonic`)
 
-Optionally override the RPC password (default is `zebra`):
+Optionally override the rpc-router password (default is `zebra`). The `REGTEST_` infix marks the var as regtest-scoped:
 
 ```bash
-RPC_PASSWORD='your-password' ./scripts/regtest-init.sh
+Z3_REGTEST_RPC_ROUTER_PASSWORD='your-password' ./scripts/regtest-init.sh
 ```
 
 ## Start the stack
@@ -44,15 +45,15 @@ docker compose --env-file .env.regtest up -d
 Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source on first run (takes a few minutes; subsequent runs use the Docker layer cache).
 
 > [!NOTE]
-> Regtest uses the same host ports as mainnet/testnet. If other Z3 services are running, stop them first (`docker compose down`) or override port variables in `.env.regtest`.
+> Regtest host ports are explicit and globally unique so all three networks (mainnet, testnet, regtest) can run concurrently on one host without binding collisions.
 
 | Service | Endpoint | Description |
 |---------|----------|-------------|
 | rpc-router | http://localhost:8181 | JSON-RPC router (Zebra + Zallet) |
-| Zaino gRPC | https://localhost:8137 | lightwalletd-compatible gRPC (TLS) |
-| Zebra RPC | http://localhost:18232 | Direct Zebra JSON-RPC |
-| Zallet RPC | http://localhost:28232 | Direct Zallet JSON-RPC |
-| zcashd RPC | http://localhost:38232 | Optional zcashd comparator (`--profile zcashd`) |
+| Zaino gRPC | https://localhost:28137 | lightwalletd-compatible gRPC (TLS) |
+| Zebra RPC | http://localhost:29232 | Direct Zebra JSON-RPC |
+| Zallet RPC | http://localhost:50232 | Direct Zallet JSON-RPC |
+| zcashd RPC | http://localhost:62232 | Optional zcashd comparator (`--profile zcashd`) |
 
 ## Optional zcashd comparator
 
@@ -62,7 +63,7 @@ For local compatibility checks against zcashd, start the profiled zcashd service
 docker compose --env-file .env.regtest --profile zcashd up -d zcashd
 ```
 
-The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses a separate Docker volume (`zcashd_data`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
+The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses a separate Docker volume (`z3-regtest-zcashd`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
 
 For comparator runs that need a specific upgrade era, override the zcashd activation heights and use a separate data volume:
 
@@ -97,7 +98,7 @@ curl -s -X POST -H "Content-Type: application/json" \
 
 ## Test Zaino gRPC
 
-Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) on port 8137 with TLS. The `--insecure` flag tells grpcurl to accept the self-signed certificate.
+Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) with TLS. In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `--insecure` flag tells grpcurl to accept the self-signed certificate.
 
 Initialize the zaino submodule if you haven't already (needed for the proto files):
 
@@ -111,7 +112,7 @@ Test with `GetLightdInfo` (from the repo root):
 grpcurl -insecure \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
-  127.0.0.1:8137 \
+  127.0.0.1:28137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
 ```
 
@@ -122,7 +123,7 @@ grpcurl -insecure \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
   -d '{}' \
-  127.0.0.1:8137 \
+  127.0.0.1:28137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock
 ```
 
@@ -160,19 +161,13 @@ docker compose --env-file .env.regtest down -v
 
 ## Monitoring in regtest
 
-To enable monitoring, add the metrics endpoint to `.env.regtest`:
-
-```bash
-ZEBRA_METRICS__ENDPOINT_ADDR=0.0.0.0:9999
-```
-
-Then start with both flags:
+Zebra's Prometheus endpoint is enabled by default on the internal `zebra:9999` scrape target. Start the monitoring profile:
 
 ```bash
 docker compose --env-file .env.regtest --profile monitoring up -d
 ```
 
-The port (9999) must match the Prometheus scrape target configured in `observability/prometheus/prometheus.yaml`.
+Regtest monitoring UI ports are Grafana `23000`, Prometheus `29094`, Jaeger UI `36686`, and AlertManager `29093`. Jaeger also publishes OTLP gRPC `25317`, OTLP HTTP `25318`, and spanmetrics `28889`.
 
 ## Notes
 

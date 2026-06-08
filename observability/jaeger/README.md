@@ -320,16 +320,28 @@ These power the Monitor tab and can be scraped by Prometheus for Grafana dashboa
 
 ### No traces appearing
 
-1. Ensure Zebra was built with OTel support: `docker compose build --build-arg FEATURES="default-release-binaries opentelemetry" zebra`
-2. Check tracing env vars are set: `ZEBRA_TRACING__OPENTELEMETRY_ENDPOINT=http://jaeger:4318`
-3. Verify Jaeger health: http://localhost:16686
-4. Check Jaeger logs: `docker compose logs jaeger`
+1. Check tracing env vars are set in Zebra's container:
+   `docker inspect z3-mainnet-zebra-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ZEBRA_TRACING__OPENTELEMETRY`
+2. Recreate Zebra after env changes:
+   `docker compose --env-file .env.mainnet --env-file .env --profile monitoring up -d --force-recreate zebra`
+3. Check Zebra installed the exporter:
+   `docker logs z3-mainnet-zebra-1 | grep 'installed OpenTelemetry tracing layer'`
+4. Verify Jaeger health: <http://localhost:16686>
+5. Check Jaeger service discovery:
+   `curl -s http://127.0.0.1:16686/api/services`
+6. Check Jaeger logs: `docker compose --profile monitoring logs jaeger`
+
+The pinned Zebra image and the default local build use `default-release-binaries`,
+which includes OpenTelemetry. If you override `Z3_ZEBRA_BUILD_FEATURES`, keep
+`opentelemetry` in the feature list.
 
 ### Monitor tab shows "No Data"
 
 1. Ensure spanmetrics connector is configured
 2. Wait for traces to accumulate (needs a few minutes)
 3. Select the correct Span Kind filter
+4. Confirm Prometheus has spanmetrics:
+   `curl -sG http://127.0.0.1:9094/api/v1/query --data-urlencode 'query=traces_span_metrics_calls_total{service_name="zebra-mainnet"}'`
 
 ### High memory usage
 
