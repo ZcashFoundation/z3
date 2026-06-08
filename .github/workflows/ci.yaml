@@ -12,21 +12,79 @@ on:
 permissions: {}
 
 jobs:
-  smoke-test:
-    name: Service smoke tests
+  contract-validation:
+    name: Contract validation (all networks)
     runs-on: ubuntu-latest
-    env:
-      COMPOSE_PROJECT_NAME: z3-smoke
-      COMPOSE_FILE: docker-compose.yml:docker-compose.regtest.yml
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           persist-credentials: false
 
-      - name: Generate TLS certs and regtest configs
+      - name: Stage local config files for compose render
+        # The live config/<net>/{zallet,zaino}.toml files and identity files
+        # are gitignored, but docker compose config validates bind-mount source
+        # existence. Copy templates into place and touch identity stubs.
         run: |
-          cp -n config/zallet.toml.default config/zallet.toml
-          cp -n config/regtest/zallet.toml.default config/regtest/zallet.toml
+          for net in mainnet testnet regtest; do
+            cp config/$net/zallet.toml.example config/$net/zallet.toml
+            cp config/$net/zaino.toml.example config/$net/zaino.toml
+            touch config/$net/zallet_identity.txt
+          done
+          mkdir -p config/tls
+          touch config/tls/zaino.crt config/tls/zaino.key
+
+      - name: Validate compose for every network
+        run: |
+          docker compose --env-file .env.mainnet config --quiet
+          docker compose --env-file .env.testnet config --quiet
+          docker compose --env-file .env.regtest config --quiet
+          docker compose --env-file .env.mainnet --profile monitoring config --quiet
+          docker compose --env-file .env.testnet --profile monitoring config --quiet
+          docker compose --env-file .env.regtest --profile monitoring config --quiet
+          docker compose --env-file .env.mainnet --profile zcashd config --quiet
+          docker compose --env-file .env.testnet --profile zcashd config --quiet
+          docker compose --env-file .env.regtest --profile zcashd config --quiet
+
+      - name: Install Python deps (contract parser + JSON Schema validator)
+        run: python3 -m pip install --quiet pyyaml jsonschema
+
+      - name: Validate z3-contract.yaml against z3-contract.schema.json
+        run: |
+          python3 -c '
+          import json, sys, yaml, jsonschema
+          contract = yaml.safe_load(open("z3-contract.yaml"))
+          schema = json.load(open("z3-contract.schema.json"))
+          jsonschema.validate(contract, schema)
+          print("PASS: z3-contract.yaml validates against z3-contract.schema.json")
+          '
+
+      - name: Validate platform contract against resolved compose
+        run: ./scripts/validate-contract.py
+
+      - name: Validate contract inventory parity (env vars across compose and .env.example)
+        run: ./scripts/validate-contract-parity.py
+
+  regtest-smoke:
+    name: Regtest smoke test
+    runs-on: ubuntu-latest
+    needs: contract-validation
+    # External identifiers for the regtest stack. Keep aligned with
+    # z3-contract.yaml networks.regtest.{external_network,volumes.cookie}.
+    # Values are literal constants, not user input — safe in run: blocks.
+    env:
+      COOKIE_VOLUME: z3-regtest-cookie
+      EXTERNAL_NETWORK: z3-regtest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Stage local files (live TOMLs from templates, TLS, identity)
+        # Mirrors the file setup step without requiring rage in CI. The sed
+        # command patches the live gitignored copy, not the tracked template.
+        run: |
+          cp config/regtest/zallet.toml.example config/regtest/zallet.toml
+          cp config/regtest/zaino.toml.example config/regtest/zaino.toml
           mkdir -p config/tls
           openssl req -x509 -newkey rsa:2048 \
             -keyout config/tls/zaino.key -out config/tls/zaino.crt \
@@ -38,20 +96,14 @@ jobs:
           HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
           sed -i "s|__GENERATED_BY_INIT_SH__|${SALT}\$${HASH}|" config/regtest/zallet.toml
 
-      - name: Validate compose configs
-        run: |
-          docker compose config --quiet
-          docker compose --env-file .env.regtest config --quiet
-          docker compose --env-file .env.regtest --profile zcashd config --quiet
-
       - name: Start Zebra (regtest)
         run: |
           docker compose --env-file .env.regtest up -d zebra
-          echo "Waiting for Zebra RPC..."
+          echo "Waiting for Zebra RPC on host port 29232..."
           for i in $(seq 1 60); do
             if curl -sf -X POST -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-              http://127.0.0.1:18232 > /dev/null 2>&1; then
+              http://127.0.0.1:29232 > /dev/null 2>&1; then
               echo "Zebra is ready"
               break
             fi
@@ -63,22 +115,22 @@ jobs:
         run: |
           curl -sf -X POST -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-            http://127.0.0.1:18232 | jq .
+            http://127.0.0.1:29232 | jq .
 
       - name: Mine block 1 (required for Zaino sync)
         run: |
           curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"generate","params":[1],"id":1}' \
-            http://127.0.0.1:18232 | jq .
+            http://127.0.0.1:29232 | jq .
 
       - name: Start Zaino and verify JSON-RPC proxy
         run: |
           docker compose --env-file .env.regtest up -d zaino
-          echo "Waiting for Zaino JSON-RPC..."
+          echo "Waiting for Zaino JSON-RPC on host port 28237..."
           for i in $(seq 1 30); do
             if RESULT=$(curl -sf -X POST -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-              http://127.0.0.1:8237 2>/dev/null); then
+              http://127.0.0.1:28237 2>/dev/null); then
               echo "Zaino is ready"
               echo "$RESULT" | jq .
               break
@@ -94,11 +146,11 @@ jobs:
       - name: Start zcashd comparator and verify RPC
         run: |
           docker compose --env-file .env.regtest --profile zcashd up -d zcashd
-          echo "Waiting for zcashd RPC..."
+          echo "Waiting for zcashd RPC on host port 62232..."
           for i in $(seq 1 30); do
             if RESULT=$(curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
               -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-              http://127.0.0.1:38232 2>/dev/null); then
+              http://127.0.0.1:62232 2>/dev/null); then
               echo "zcashd is ready"
               echo "$RESULT" | jq .
               break
@@ -114,9 +166,24 @@ jobs:
       - name: Verify Zallet accepts compose command
         run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
 
+      - name: Verify the cookie volume is attachable
+        # Regtest disables cookie auth (ZEBRA_RPC__ENABLE_COOKIE_AUTH=false) so
+        # Zebra does not write /auth/.cookie. This check only verifies that the
+        # published volume can be mounted.
+        run: |
+          docker run --rm -v "$COOKIE_VOLUME":/auth:ro alpine \
+            sh -c 'test -d /auth && echo "Cookie volume mounted read-only at /auth"'
+
+      - name: Verify the external network is attachable
+        run: |
+          docker run --rm --network "$EXTERNAL_NETWORK" alpine \
+            sh -c 'apk add --no-cache bind-tools >/dev/null 2>&1 && nslookup zebra && nslookup zaino'
+
       - name: Collect logs on failure
         if: failure()
         run: |
+          echo "=== Container status ==="
+          docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
           echo "=== Zebra logs ==="
           docker compose --env-file .env.regtest logs zebra --tail 50 2>&1 || true
           echo "=== Zaino logs ==="
@@ -125,6 +192,68 @@ jobs:
           docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50 2>&1 || true
           echo "=== Container status ==="
           docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
+
+  cookie-permission-smoke:
+    # Regtest disables cookie auth, so the regtest smoke job does not exercise
+    # the cookie path. This job boots testnet Zebra and checks that the cookie
+    # file is readable by service runtime users.
+    name: Cookie permission smoke (testnet)
+    runs-on: ubuntu-latest
+    needs: contract-validation
+    # External cookie volume for the testnet stack. Keep aligned with
+    # z3-contract.yaml networks.testnet.volumes.cookie.
+    env:
+      COOKIE_VOLUME: z3-testnet-cookie
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Stage operator files for testnet boot
+        run: |
+          cp config/testnet/zallet.toml.example config/testnet/zallet.toml
+          cp config/testnet/zaino.toml.example config/testnet/zaino.toml
+          mkdir -p config/tls
+          openssl req -x509 -newkey rsa:2048 \
+            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
+            -sha256 -days 1 -nodes -subj "/CN=localhost" \
+            -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
+          chmod 644 config/tls/zaino.key config/tls/zaino.crt
+          echo "# dummy identity for CI" > config/testnet/zallet_identity.txt
+
+      - name: Start testnet zebra and cookie-permissions sidecar
+        # The sidecar chmods the cookie 0644 so services that mount the shared
+        # volume can read it.
+        run: |
+          docker compose --env-file .env.testnet up -d zebra cookie-permissions
+          echo "Waiting up to 60s for Zebra to write the cookie file..."
+          for i in $(seq 1 30); do
+            if docker run --rm -v "$COOKIE_VOLUME":/auth:ro alpine test -f /auth/.cookie 2>/dev/null; then
+              echo "Cookie file present after ~$((i*2))s"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "Cookie file never appeared"
+              docker compose --env-file .env.testnet logs zebra --tail 50
+              exit 1
+            fi
+            sleep 2
+          done
+          # Give the sidecar one polling cycle to chmod the cookie.
+          sleep 6
+
+      - name: Assert cookie file is readable by both Zaino (uid 1000) and Zallet (uid 1000)
+        # Test the runtime UIDs used by the services that read the shared
+        # cookie volume.
+        run: |
+          docker run --rm --user 1000:1000 -v "$COOKIE_VOLUME":/auth:ro alpine \
+            sh -c 'cat /auth/.cookie >/dev/null && echo "uid 1000 read OK"'
+          docker run --rm --user 10001:10001 -v "$COOKIE_VOLUME":/auth:ro alpine \
+            sh -c 'cat /auth/.cookie >/dev/null && echo "uid 10001 read OK"'
+
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file .env.testnet down -v --remove-orphans 2>&1 || true
 
   rpc-router-tests:
     name: rpc-router cargo test

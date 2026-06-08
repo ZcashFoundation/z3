@@ -1,0 +1,204 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ZcashFoundation/z3/blob/main/z3-contract.schema.json",
+  "title": "Z3 Platform Contract",
+  "description": "Schema for z3-contract.yaml. Consumers validate the parsed YAML against this schema before relying on its identifiers.",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "versioning",
+    "service_dns",
+    "cookie_path",
+    "networks",
+    "healthchecks",
+    "env_vars",
+    "profiles"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "contract_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "SemVer string. Bumped per the policy under versioning:."
+    },
+    "versioning": {
+      "type": "object",
+      "required": ["policy", "major", "minor", "patch"],
+      "additionalProperties": false,
+      "properties": {
+        "policy": {"const": "semver"},
+        "major": {"type": "string"},
+        "minor": {"type": "string"},
+        "patch": {"type": "string"}
+      }
+    },
+    "service_dns": {
+      "type": "object",
+      "description": "Map of service name to its in-network DNS identifier. Entries with a profile: key only resolve when that Compose profile is active.",
+      "additionalProperties": {"$ref": "#/$defs/dnsEntry"}
+    },
+    "cookie_path": {
+      "type": "string",
+      "pattern": "^/",
+      "description": "Absolute path of the RPC cookie file inside every container that needs auth."
+    },
+    "networks": {
+      "type": "object",
+      "required": ["mainnet", "testnet", "regtest"],
+      "additionalProperties": false,
+      "properties": {
+        "mainnet": {"$ref": "#/$defs/network"},
+        "testnet": {"$ref": "#/$defs/network"},
+        "regtest": {"$ref": "#/$defs/network"}
+      }
+    },
+    "healthchecks": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/healthcheck"}
+    },
+    "env_vars": {
+      "type": "object",
+      "description": "Public env-var schema, grouped by function.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"$ref": "#/$defs/envVar"}
+      }
+    },
+    "ecosystem_vars": {
+      "type": "array",
+      "description": "Ecosystem-standard env vars documented for completeness but not part of the z3 contract.",
+      "items": {"$ref": "#/$defs/envVar"}
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Compose profiles available across all networks.",
+      "additionalProperties": {"type": "string"}
+    },
+    "image_platforms": {
+      "type": "object",
+      "description": "Platform constraints per image. Each value is the list of platforms the upstream image publishes; entries with only linux/amd64 run under emulation on arm64 hosts.",
+      "additionalProperties": {
+        "type": "array",
+        "items": {"type": "string", "pattern": "^linux/(amd64|arm64)$"},
+        "minItems": 1
+      }
+    }
+  },
+  "$defs": {
+    "profileName": {
+      "type": "string",
+      "enum": ["monitoring", "zcashd"]
+    },
+    "networkName": {
+      "type": "string",
+      "enum": ["mainnet", "testnet", "regtest"]
+    },
+    "namespaceName": {
+      "type": "string",
+      "enum": ["z3", "zebra", "zaino", "zcashd", "grafana", "compose", "docker", "rust"]
+    },
+    "dnsEntry": {
+      "type": "object",
+      "required": ["dns"],
+      "additionalProperties": false,
+      "properties": {
+        "dns": {"type": "string"},
+        "profile": {"$ref": "#/$defs/profileName"}
+      }
+    },
+    "volumeEntry": {
+      "oneOf": [
+        {"type": "string"},
+        {
+          "type": "object",
+          "required": ["name"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "profile": {"$ref": "#/$defs/profileName"}
+          }
+        }
+      ]
+    },
+    "portEntry": {
+      "type": "object",
+      "required": ["container"],
+      "additionalProperties": false,
+      "properties": {
+        "container": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "host":      {"type": "integer", "minimum": 1, "maximum": 65535},
+        "profile":   {"$ref": "#/$defs/profileName"}
+      }
+    },
+    "network": {
+      "type": "object",
+      "required": ["z3_network", "compose_project", "external_network", "rpc_auth", "volumes", "ports"],
+      "additionalProperties": false,
+      "properties": {
+        "z3_network":       {"type": "string", "enum": ["Mainnet", "Testnet", "Regtest"]},
+        "compose_project":  {"type": "string", "pattern": "^z3-(mainnet|testnet|regtest)$"},
+        "external_network": {"type": "string", "pattern": "^z3-(mainnet|testnet|regtest)$"},
+        "rpc_auth":         {"$ref": "#/$defs/rpcAuth"},
+        "volumes": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/volumeEntry"}
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/portEntry"}
+        }
+      }
+    },
+    "rpcAuth": {
+      "type": "object",
+      "required": ["mode"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {"type": "string", "enum": ["cookie", "username_password"]},
+        "credential_env_vars": {
+          "type": "object",
+          "required": ["user", "password"],
+          "additionalProperties": false,
+          "properties": {
+            "user":     {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+            "password": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"}
+          }
+        },
+        "note": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if":   { "properties": { "mode": { "const": "username_password" } }, "required": ["mode"] },
+          "then": { "required": ["credential_env_vars"] }
+        }
+      ]
+    },
+    "healthcheck": {
+      "type": "object",
+      "required": ["transport"],
+      "additionalProperties": false,
+      "properties": {
+        "transport": {"type": "string", "enum": ["http", "tcp", "cli", "none"]},
+        "port":      {"type": "integer", "minimum": 1, "maximum": 65535},
+        "liveness":  {"type": ["string", "null"]},
+        "readiness": {"type": ["string", "null"]},
+        "profile":   {"$ref": "#/$defs/profileName"},
+        "note":      {"type": "string"}
+      }
+    },
+    "envVar": {
+      "type": "object",
+      "required": ["name", "namespace"],
+      "additionalProperties": false,
+      "properties": {
+        "name":        {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+        "namespace":   {"$ref": "#/$defs/namespaceName"},
+        "description": {"type": "string"},
+        "scope":       {"type": "string", "enum": ["host", "container"]},
+        "values":      {"type": "array", "items": {"type": "string"}},
+        "profile":     {"$ref": "#/$defs/profileName"},
+        "network":     {"$ref": "#/$defs/networkName"}
+      }
+    }
+  }
+}
