@@ -1,0 +1,7 @@
+# Per-host overrides for the regtest stack. The live copy is gitignored.
+# Loaded via COMPOSE_FILE in .env.regtest, so
+#   docker compose --env-file .env.regtest up -d
+# picks it up automatically. `scripts/setup-network.sh regtest` copies this
+# template on first run if the live file is missing. Edit freely.
+
+services: {}

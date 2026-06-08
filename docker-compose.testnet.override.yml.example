@@ -1,0 +1,17 @@
+# Per-host overrides for the testnet stack. The live copy is gitignored.
+# Loaded via COMPOSE_FILE in .env.testnet, so
+#   docker compose --env-file .env.testnet up -d
+# picks it up automatically. `scripts/setup-network.sh testnet` copies this
+# template on first run if the live file is missing. Edit freely.
+#
+# Example overrides:
+#
+# services:
+#   zebra:
+#     deploy:
+#       resources:
+#         limits:
+#           cpus: "8"
+#           memory: 8g
+
+services: {}

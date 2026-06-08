@@ -29,8 +29,8 @@ ZEBRA_UID=10001
 ZEBRA_GID=10001
 ZAINO_UID=1000
 ZAINO_GID=1000
-ZALLET_UID=65532
-ZALLET_GID=65532
+ZALLET_UID=1000
+ZALLET_GID=1000
 ZCASHD_UID=999
 ZCASHD_GID=999
 
@@ -41,7 +41,7 @@ usage() {
     echo "Services:"
     echo "  zebra   - Zebra blockchain state (UID:GID 10001:10001, perms 700)"
     echo "  zaino   - Zaino indexer data (UID:GID 1000:1000, perms 700)"
-    echo "  zallet  - Zallet wallet data (UID:GID 65532:65532, perms 700)"
+    echo "  zallet  - Zallet wallet data (UID:GID 1000:1000, perms 700)"
     echo "  zcashd  - Optional zcashd comparator data (UID:GID 999:999, perms 700)"
     echo "  cookie  - Shared cookie directory (UID:GID 10001:10001, perms 750)"
     echo ""
@@ -86,13 +86,11 @@ case "$SERVICE" in
     cookie)
         OWNER_UID=$ZEBRA_UID
         OWNER_GID=$ZEBRA_GID
-        PERMS=750
-        echo -e "${YELLOW}WARNING: Cookie directory has special requirements.${NC}"
-        echo "Zaino (UID 1000) needs read access to Zebra's (UID 10001) cookie."
-        echo "After running this script, you may need to:"
-        echo "  1. Use ACLs: sudo setfacl -m u:1000:r ${DIR_PATH}"
-        echo "  2. Or create a shared group for both users"
-        echo "  3. Or keep cookie as Docker volume (recommended)"
+        PERMS=755
+        echo -e "${YELLOW}NOTE: cookie permissions are handled by the cookie-permissions${NC}"
+        echo "sidecar in docker-compose.yml at runtime. It chmods the .cookie file to"
+        echo "0644 inside the volume so any consumer uid can read it. Bind-mounting"
+        echo "the cookie path is advanced; the default Docker named volume is preferred."
         echo ""
         ;;
     *)
@@ -133,7 +131,7 @@ echo ""
 echo "To use this directory, update your .env file:"
 case "$SERVICE" in
     zebra)
-        echo "  Z3_ZEBRA_DATA_PATH=${DIR_PATH}"
+        echo "  Z3_CHAIN_DATA_PATH=${DIR_PATH}"
         ;;
     zaino)
         echo "  Z3_ZAINO_DATA_PATH=${DIR_PATH}"

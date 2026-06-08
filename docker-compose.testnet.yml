@@ -1,0 +1,32 @@
+# Testnet overlay merged on top of docker-compose.yml.
+#
+# Usage:
+#   docker compose --env-file .env.testnet up -d
+#
+# Only contains testnet-specific structural overrides. Network selection,
+# port matrix, project name, and config dir come from .env.testnet.
+
+services:
+  zcashd:
+    command:
+      - zcashd
+      - -conf=/dev/null
+      - -printtoconsole
+      - -testnet
+      - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
+      - -listen=0
+      - -dnsseed=0
+      - -dns=0
+      - -connect=0
+      - -server=1
+      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
+      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
+      - -rpcbind=0.0.0.0
+      - -rpcport=38232
+      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
+    healthcheck:
+      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -testnet -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
