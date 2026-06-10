@@ -3,7 +3,7 @@
 
 Parses the platform contract's port matrix, volume names, RPC auth mode, and
 service DNS directly from z3-contract.yaml, runs `docker compose --env-file
-.env.<net> --profile zcashd --profile monitoring config` for each declared
+.env.<net> --profile monitoring config` for each declared
 network, and asserts that the resolved values match.
 
 Volumes and ports can be plain values or {name, profile} / {container, host,
@@ -93,7 +93,6 @@ def render_compose(network_name: str, env_file: pathlib.Path) -> str:
                 "docker", "compose",
                 *compose_args,
                 "--env-file", str(env_file),
-                "--profile", "zcashd",
                 "--profile", "monitoring",
                 "config",
             ],
@@ -214,13 +213,6 @@ def validate_network(asserter: Asserter, network_name: str, spec: dict) -> None:
         config,
     )
 
-    if network_name == "testnet":
-        asserter.present("zcashd starts on testnet",
-                         r"^\s+- -testnet$", config)
-    elif network_name == "regtest":
-        asserter.present("zcashd starts on regtest",
-                         r"^\s+- -regtest$", config)
-
 
 def validate_healthchecks(asserter: Asserter, network_name: str,
                           config: str, healthchecks: dict) -> None:
@@ -256,9 +248,7 @@ def validate_healthchecks(asserter: Asserter, network_name: str,
                 f"{service} healthcheck = tcp {port}",
                 pattern, config,
             )
-        # transport: none / cli are not asserted positively (Zallet has no
-        # probe binary; zcashd uses zcash-cli which is profile-gated and
-        # already covered by the -testnet/-regtest startup assertion).
+        # transport: none is not asserted positively (Zallet has no probe binary).
 
 
 def validate_unique_host_ports(asserter: Asserter, contract: dict) -> None:

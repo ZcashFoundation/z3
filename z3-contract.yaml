@@ -28,7 +28,6 @@ service_dns:
   zebra:   {dns: zebra}
   zaino:   {dns: zaino}
   zallet:  {dns: zallet}
-  zcashd:  {dns: zcashd, profile: zcashd}
 
 # Cookie file path inside containers on networks whose rpc_auth.mode is cookie.
 cookie_path: "/var/run/auth/.cookie"
@@ -51,7 +50,6 @@ networks:
       cookie: "z3-mainnet-cookie"
       zaino:  "z3-mainnet-zaino"
       zallet: "z3-mainnet-zallet"
-      zcashd: {name: "z3-mainnet-zcashd", profile: zcashd}
     ports:
       zebra_rpc:          {container: 8232,  host: 8232}
       zebra_p2p:          {container: 8233,  host: 8233}     # published for inbound peers
@@ -60,7 +58,6 @@ networks:
       zaino_grpc:         {container: 8137,  host: 8137}
       zaino_json_rpc:     {container: 8237,  host: 8237}
       zallet_rpc:         {container: 28232, host: 28232}
-      zcashd_rpc:         {container: 38232, host: 60232, profile: zcashd}
       prometheus:         {container: 9090,  host: 9094,   profile: monitoring}
       grafana:            {container: 3000,  host: 3000,   profile: monitoring}
       jaeger_ui:          {container: 16686, host: 16686,  profile: monitoring}
@@ -80,7 +77,6 @@ networks:
       cookie: "z3-testnet-cookie"
       zaino:  "z3-testnet-zaino"
       zallet: "z3-testnet-zallet"
-      zcashd: {name: "z3-testnet-zcashd", profile: zcashd}
     ports:
       # Health, Zaino, Zallet host ports use a +10000 offset relative to
       # mainnet so the two networks can run concurrently on the same host.
@@ -91,7 +87,6 @@ networks:
       zaino_grpc:         {container: 8137,  host: 18137}
       zaino_json_rpc:     {container: 8237,  host: 18237}
       zallet_rpc:         {container: 28232, host: 40232}
-      zcashd_rpc:         {container: 38232, host: 61232, profile: zcashd}
       prometheus:         {container: 9090,  host: 19094,  profile: monitoring}
       grafana:            {container: 3000,  host: 13000,  profile: monitoring}
       jaeger_ui:          {container: 16686, host: 26686,  profile: monitoring}
@@ -115,7 +110,6 @@ networks:
       cookie: "z3-regtest-cookie"
       zaino:  "z3-regtest-zaino"
       zallet: "z3-regtest-zallet"
-      zcashd: {name: "z3-regtest-zcashd", profile: zcashd}
     ports:
       # Regtest inherits Zebra's testnet container-port defaults.
       # Host ports are explicit to avoid cross-service collisions.
@@ -127,7 +121,6 @@ networks:
       zaino_json_rpc:     {container: 8237,  host: 28237}
       zallet_rpc:         {container: 28232, host: 50232}
       rpc_router:         {container: 8181,  host: 8181}
-      zcashd_rpc:         {container: 38232, host: 62232, profile: zcashd}
       prometheus:         {container: 9090,  host: 29094,  profile: monitoring}
       grafana:            {container: 3000,  host: 23000,  profile: monitoring}
       jaeger_ui:          {container: 16686, host: 36686,  profile: monitoring}
@@ -151,10 +144,6 @@ healthchecks:
   zallet:
     transport: none
     note: "No healthcheck: distroless image has no shell or probe binary. A consumer using depends_on: condition: service_healthy against zallet will hang. Wait for Zebra's /ready instead and assume Zallet is up shortly after."
-  zcashd:
-    transport: cli
-    profile: zcashd
-    note: "zcash-cli getblockchaininfo over RPC. Container-internal; not exposed."
 
 # Public env-var schema.
 #
@@ -164,12 +153,11 @@ healthchecks:
 #   z3         Stack-level setting
 #   zebra      Zebra config-rs (double-underscore is config-rs nesting separator)
 #   zaino      Zaino config-rs
-#   zcashd     zcashd image entrypoint convention
 #   grafana    Grafana GF_* convention
 #   compose    Docker Compose's own knobs
 #   docker     Docker / Compose ecosystem convention
 #
-# Native-namespace entries (zebra, zaino, zcashd, grafana) are passed through
+# Native-namespace entries (zebra, zaino, grafana) are passed through
 # unchanged.
 env_vars:
   network:
@@ -184,9 +172,8 @@ env_vars:
     - {name: Z3_ZEBRA_IMAGE, namespace: z3}
     - {name: Z3_ZAINO_IMAGE, namespace: z3}
     - {name: Z3_ZALLET_IMAGE, namespace: z3}
-    - {name: Z3_ZCASHD_IMAGE, namespace: z3, profile: zcashd}
     - {name: Z3_ZEBRA_BUILD_FEATURES, namespace: z3, description: "Build arg when building Zebra from source."}
-    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra 5.x is multi-arch (no pin needed); Zaino and Zallet publish amd64 only and are pinned in compose; zcashd is hardcoded amd64. Override to build Zaino/Zallet native arm64 from the submodules."}
+    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra 5.x is multi-arch (no pin needed); Zaino and Zallet publish amd64 only and are pinned in compose. Override to build Zaino/Zallet native arm64 from the submodules."}
 
   ports:
     # Host ports (z3 controls the per-network port matrix; testnet/regtest offset).
@@ -197,10 +184,8 @@ env_vars:
     - {name: Z3_ZAINO_HOST_JSON_RPC_PORT, namespace: z3, scope: host}
     - {name: Z3_ZALLET_HOST_RPC_PORT, namespace: z3, scope: host}
     - {name: Z3_REGTEST_RPC_ROUTER_HOST_PORT, namespace: z3, scope: host, network: regtest, description: "rpc-router host port (regtest only)."}
-    - {name: Z3_ZCASHD_HOST_RPC_PORT, namespace: z3, scope: host, profile: zcashd}
-    - {name: Z3_ZCASHD_HOST_RPC_BIND, namespace: z3, scope: host, profile: zcashd, description: "Host interface zcashd RPC binds to. Default 127.0.0.1."}
     # Container ports: only Zebra's vary per network (upstream Zebra defaults
-    # 8232 mainnet / 18232 testnet). Zaino, Zallet, and zcashd container ports
+    # 8232 mainnet / 18232 testnet). Zaino and Zallet container ports
     # are hardcoded in the compose because they do not differ per network.
     - {name: Z3_ZEBRA_RPC_PORT, namespace: z3, scope: container}
     - {name: Z3_ZEBRA_P2P_PORT, namespace: z3, scope: container, description: "Zebra p2p port; network default 8233 mainnet / 18233 testnet."}
@@ -210,14 +195,10 @@ env_vars:
     - {name: Z3_CHAIN_DATA_PATH, namespace: z3, description: "Override chain volume with a bind-mount path."}
     - {name: Z3_ZAINO_DATA_PATH, namespace: z3}
     - {name: Z3_ZALLET_DATA_PATH, namespace: z3}
-    - {name: Z3_ZCASHD_DATA_PATH, namespace: z3, profile: zcashd}
     - {name: Z3_COOKIE_PATH, namespace: z3, description: "Override cookie volume (advanced; breaks the shared-volume pattern)."}
 
   auth:
     - {name: ZEBRA_RPC__ENABLE_COOKIE_AUTH, namespace: zebra, description: "Toggles Zebra RPC cookie auth. Disabled in regtest."}
-    - {name: ZCASHD_RPCUSER, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_RPCPASSWORD, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_RPC_ALLOWIP, namespace: zcashd, profile: zcashd}
     # rpc-router runs only under the regtest overlay; the REGTEST infix marks scope.
     - {name: Z3_REGTEST_RPC_ROUTER_USER, namespace: z3, network: regtest, description: "rpc-router credential (regtest only)."}
     - {name: Z3_REGTEST_RPC_ROUTER_PASSWORD, namespace: z3, network: regtest, description: "rpc-router credential (regtest only)."}
@@ -237,7 +218,7 @@ env_vars:
     - {name: ZEBRA_TRACING__FILTER, namespace: zebra, description: "Advanced: Zebra's own tracing-subscriber filter (independent of RUST_LOG)."}
 
   mining:
-    - {name: ZEBRA_MINING__MINER_ADDRESS, namespace: zebra, description: "Required for regtest mining and for --profile zcashd."}
+    - {name: ZEBRA_MINING__MINER_ADDRESS, namespace: zebra, description: "Required for regtest mining."}
 
   observability:
     - {name: Z3_PROMETHEUS_PORT, namespace: z3, profile: monitoring}
@@ -256,14 +237,13 @@ env_vars:
 # Ecosystem-standard names z3 inherits but does not own. Documented because
 # operators may set them; parity checkers skip these.
 ecosystem_vars:
-  - {name: COMPOSE_FILE, namespace: compose, description: "Compose's overlay loader. .env.testnet and .env.regtest set this to load their overlays."}
+  - {name: COMPOSE_FILE, namespace: compose, description: "Compose's overlay loader. .env.regtest sets this to load the regtest overlay."}
   - {name: RUST_LOG, namespace: rust, description: "Global Rust log level."}
   - {name: RUST_BACKTRACE, namespace: rust, description: "Global Rust backtrace toggle. Zaino reads it directly (default: full); set in shell or .env to enable for Zebra/Zallet too."}
 
 # Compose profiles available across all networks.
 profiles:
   monitoring: "Prometheus + Grafana + Jaeger + AlertManager"
-  zcashd:     "Optional zcashd comparator (requires Z3_ZCASHD_IMAGE)"
 
 # Platform constraints per image. Entries listed as amd64-only run under
 # emulation on arm64 hosts even when DOCKER_PLATFORM=linux/arm64 is set.
@@ -272,4 +252,3 @@ image_platforms:
   zebra:  [linux/amd64, linux/arm64]
   zaino:  [linux/amd64]
   zallet: [linux/amd64]
-  zcashd: [linux/amd64]

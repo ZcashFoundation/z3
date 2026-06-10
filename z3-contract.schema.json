@@ -87,7 +87,7 @@
   "$defs": {
     "profileName": {
       "type": "string",
-      "enum": ["monitoring", "zcashd"]
+      "enum": ["monitoring"]
     },
     "networkName": {
       "type": "string",
@@ -95,7 +95,7 @@
     },
     "namespaceName": {
       "type": "string",
-      "enum": ["z3", "zebra", "zaino", "zcashd", "grafana", "compose", "docker", "rust"]
+      "enum": ["z3", "zebra", "zaino", "grafana", "compose", "docker", "rust"]
     },
     "dnsEntry": {
       "type": "object",

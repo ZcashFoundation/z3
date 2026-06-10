@@ -7,6 +7,3 @@
 [submodule "zallet"]
 	path = zallet
 	url = https://github.com/zcash/wallet
-[submodule "zcashd"]
-	path = zcashd
-	url = https://github.com/zcash/zcash.git

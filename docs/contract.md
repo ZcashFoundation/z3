@@ -18,7 +18,7 @@ Identifiers NOT in this contract (Compose service container names, internal conf
 
 ### Contract version and image pins
 
-The contract version (`z3-contract.yaml` → `contract_version`) is the SemVer-stable API surface bumped per the policy above. Image pins are not part of the contract: they live as `${VAR:-tag}` defaults in `docker-compose.yml` and bump independently of the contract version (a Zebra patch release `4.4.1` → `4.4.2` does not require a contract bump). Operators override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, `Z3_ZALLET_IMAGE`, or `Z3_ZCASHD_IMAGE`. Platform constraints per image live in `z3-contract.yaml` under `image_platforms:`.
+The contract version (`z3-contract.yaml` → `contract_version`) is the SemVer-stable API surface bumped per the policy above. Image pins are not part of the contract: they live as `${VAR:-tag}` defaults in `docker-compose.yml` and bump independently of the contract version (a Zebra patch release `4.4.1` → `4.4.2` does not require a contract bump). Operators override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Platform constraints per image live in `z3-contract.yaml` under `image_platforms:`.
 
 ## What z3 publishes
 
@@ -32,11 +32,11 @@ Z3 runs as one of three Compose projects, one per Zcash network. The full set of
 
 Every per-network resource is a named Docker volume with an explicit `name:` declaration, so it is not subject to Compose's project-prefix behavior. Names follow the pattern `z3-<network>-<suffix>` (e.g., `z3-mainnet-cookie`); the full set is in `z3-contract.yaml` under `networks.<name>.volumes`.
 
-Of these, `cookie` is part of the consumer-facing attachment surface only when the network's `rpc_auth.mode` is `cookie` (mainnet and testnet). Regtest carries the named volume as an internal Compose artifact, but its `rpc_auth.mode` is `username_password`; consumers should not mount `z3-regtest-cookie` expecting a readable RPC cookie. The other volumes are z3's storage and should not be mounted. The `zcashd` volume is profile-gated (only created under `--profile zcashd`); the YAML marks it with `profile: zcashd`.
+Of these, `cookie` is part of the consumer-facing attachment surface only when the network's `rpc_auth.mode` is `cookie` (mainnet and testnet). Regtest carries the named volume as an internal Compose artifact, but its `rpc_auth.mode` is `username_password`; consumers should not mount `z3-regtest-cookie` expecting a readable RPC cookie. The other volumes are z3's storage and should not be mounted.
 
 ### In-network DNS
 
-Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zallet`, and `zcashd` under `--profile zcashd`). The YAML's `service_dns:` block carries the full list and marks `zcashd` with `profile: zcashd`.
+Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zallet`). The YAML's `service_dns:` block carries the full list.
 
 No per-network suffix: the network itself is the discriminator. A consumer attached to `z3-testnet` uses `http://zebra:18232`; on `z3-mainnet` it uses `http://zebra:8232`.
 
@@ -56,7 +56,7 @@ Regtest also uses Zebra's testnet container-port defaults.
 
 ### Healthchecks
 
-Per-service health surface. The YAML's `healthchecks:` block carries the per-service transport, port, and endpoint with `profile:` gating for `zcashd`.
+Per-service health surface. The YAML's `healthchecks:` block carries the per-service transport, port, and endpoint.
 
 Operational details worth knowing:
 
@@ -72,17 +72,17 @@ Three namespaces keep stack-level settings separate from service-native settings
 
 **`Z3_*` (stack-level settings).** Used for host port mappings, image pins, volume path overrides, the per-service `RUST_LOG` split, multi-network selection (`Z3_NETWORK`, `Z3_CONFIG_DIR`), and scoping wrappers such as `Z3_REGTEST_RPC_ROUTER_USER`. Image-pin defaults are `${VAR:-tag}` fallbacks in `docker-compose.yml`.
 
-**Service-native names (passed through as-is).** Used when the underlying service has a documented convention. Operators map straight from the service's docs without learning a z3 wrapper. Examples: `GF_SECURITY_ADMIN_PASSWORD` (Grafana), `ZCASHD_*` (zcashd image entrypoint), `ZEBRA_*` (Zebra config-rs, including `ZEBRA_HEALTH__*`, `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_NETWORK__EXTERNAL_ADDR`, `ZEBRA_TRACING__*`, `ZEBRA_MINING__MINER_ADDRESS`).
+**Service-native names (passed through as-is).** Used when the underlying service has a documented convention. Operators map straight from the service's docs without learning a z3 wrapper. Examples: `GF_SECURITY_ADMIN_PASSWORD` (Grafana), `ZEBRA_*` (Zebra config-rs, including `ZEBRA_HEALTH__*`, `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_NETWORK__EXTERNAL_ADDR`, `ZEBRA_TRACING__*`, `ZEBRA_MINING__MINER_ADDRESS`).
 
 **Ecosystem-standard names (inherited; not part of the z3 contract).** Documented for completeness because operators encounter them in our docs: `COMPOSE_FILE`, `RUST_LOG`, `RUST_BACKTRACE`. The YAML lists them under `ecosystem_vars:`.
 
-**Internal vars (not in the contract).** Z3 sets these inside the compose `environment:` block; operators set the public knobs above instead. Examples: `ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, `ZCASHD_RPCBIND`. Also hardcoded in the compose (no operator override): Zaino, Zallet, and zcashd container ports, which do not differ per network.
+**Internal vars (not in the contract).** Z3 sets these inside the compose `environment:` block; operators set the public knobs above instead. Examples: `ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`. Also hardcoded in the compose (no operator override): Zaino and Zallet container ports, which do not differ per network.
 
 For the canonical machine-readable inventory (every variable, its namespace tag, and profile gating), see [`z3-contract.yaml`](../z3-contract.yaml) under `env_vars:` and `ecosystem_vars:`.
 
 ### Profiles
 
-Two Compose profiles are available across every network: `monitoring` (Prometheus, Grafana, Jaeger, AlertManager) and `zcashd` (the optional zcashd comparator; requires `Z3_ZCASHD_IMAGE`). Enable with `docker compose --env-file .env.<network> --profile <profile> up -d`. Profile-gated identifiers in the YAML carry an explicit `profile:` field.
+One Compose profile is available across every network: `monitoring` (Prometheus, Grafana, Jaeger, AlertManager). Enable with `docker compose --env-file .env.<network> --profile monitoring up -d`. Profile-gated identifiers in the YAML carry an explicit `profile:` field.
 
 ## What z3 does NOT publish
 
@@ -90,7 +90,7 @@ These are explicitly OUT of the contract; they may change without a major versio
 
 - **Container names** (e.g., `z3-mainnet-zebra-1`). Compose autogenerates them; consumers should reference services by their in-network DNS name, not the container name.
 - **Per-network config file contents** (the live `config/<network>/zallet.toml`, `config/<network>/zaino.toml`). These are local files (see "File ownership" below); their contents are not part of the consumer-facing contract.
-- **Internal env vars** (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, `ZCASHD_RPCBIND`, etc.). Z3 sets them inside the compose `environment:` block; operators set the public knobs documented above instead.
+- **Internal env vars** (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, etc.). Z3 sets them inside the compose `environment:` block; operators set the public knobs documented above instead.
 - **Monitoring identifiers** (Prometheus job labels, Grafana datasource UIDs, dashboard UIDs). Internal.
 - **Compose configs** (`prometheus_config`). Internal.
 
@@ -104,7 +104,7 @@ These files are tracked defaults. Operators should not edit them; doing so creat
 
 | Path | Purpose |
 |------|---------|
-| `docker-compose.yml`, `docker-compose.testnet.yml`, `docker-compose.regtest.yml` | Stack topology. Override via `docker-compose.override.yml` (see below). |
+| `docker-compose.yml`, `docker-compose.regtest.yml` | Stack topology. Override via `docker-compose.override.yml` (see below). |
 | `z3-contract.yaml`, `z3-contract.schema.json`, `docs/contract.md` | The contract, its schema, and this guide. |
 | `.env.example` | Reference for every public env var. |
 | `.env.mainnet`, `.env.testnet`, `.env.regtest` | Per-network defaults. Override via `.env`. |

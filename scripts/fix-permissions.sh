@@ -6,13 +6,12 @@
 # Usage:
 #   ./fix-permissions.sh <service> <directory_path>
 #
-# Services: zebra, zaino, zallet, zcashd, cookie
+# Services: zebra, zaino, zallet, cookie
 #
 # Examples:
 #   ./fix-permissions.sh zebra /mnt/ssd/zebra-state
 #   ./fix-permissions.sh zaino /home/user/data/zaino
 #   ./fix-permissions.sh zallet ~/Documents/zallet-data
-#   ./fix-permissions.sh zcashd /mnt/ssd/zcashd-data
 #   ./fix-permissions.sh cookie /var/lib/z3/cookies
 #
 
@@ -31,8 +30,6 @@ ZAINO_UID=1000
 ZAINO_GID=1000
 ZALLET_UID=1000
 ZALLET_GID=1000
-ZCASHD_UID=2001
-ZCASHD_GID=2001
 
 # Show usage
 usage() {
@@ -42,14 +39,12 @@ usage() {
     echo "  zebra   - Zebra blockchain state (UID:GID 10001:10001, perms 700)"
     echo "  zaino   - Zaino indexer data (UID:GID 1000:1000, perms 700)"
     echo "  zallet  - Zallet wallet data (UID:GID 1000:1000, perms 700)"
-    echo "  zcashd  - Optional zcashd comparator data (UID:GID 2001:2001, perms 700)"
     echo "  cookie  - Shared cookie directory (UID:GID 10001:10001, perms 750)"
     echo ""
     echo "Examples:"
     echo "  $0 zebra /mnt/ssd/zebra-state"
     echo "  $0 zaino /home/user/data/zaino"
     echo "  $0 zallet ~/Documents/zallet-data"
-    echo "  $0 zcashd /mnt/ssd/zcashd-data"
     exit 1
 }
 
@@ -76,11 +71,6 @@ case "$SERVICE" in
     zallet)
         OWNER_UID=$ZALLET_UID
         OWNER_GID=$ZALLET_GID
-        PERMS=700
-        ;;
-    zcashd)
-        OWNER_UID=$ZCASHD_UID
-        OWNER_GID=$ZCASHD_GID
         PERMS=700
         ;;
     cookie)
@@ -138,9 +128,6 @@ case "$SERVICE" in
         ;;
     zallet)
         echo "  Z3_ZALLET_DATA_PATH=${DIR_PATH}"
-        ;;
-    zcashd)
-        echo "  Z3_ZCASHD_DATA_PATH=${DIR_PATH}"
         ;;
     cookie)
         echo "  Z3_COOKIE_PATH=${DIR_PATH}"

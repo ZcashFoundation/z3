@@ -194,55 +194,6 @@ services:
       - "${Z3_ZALLET_HOST_RPC_PORT:-28232}:28232"
     # No healthcheck: the distroless image has no shell or curl.
 
-  zcashd:
-    # Optional zcashd comparator (--profile zcashd). Isolated from the public
-    # P2P network unless the operator overrides the command.
-    profiles: [zcashd]
-    image: ${Z3_ZCASHD_IMAGE:-zodlinc/zcashd:v6.20.0}
-    # zcashd image is amd64-only; hardcoded so DOCKER_PLATFORM=linux/arm64
-    # (used for the multi-arch Zebra/Zaino/Zallet images) does not cause
-    # the zcashd image pull to fail.
-    platform: linux/amd64
-    restart: unless-stopped
-    stop_grace_period: 30s
-    <<: *common
-    # The zodlinc/zcashd image runs as the zcash user (uid 2001) with its
-    # datadir under /srv/zcashd. Match that uid so the entrypoint can write,
-    # and mount the data volume at /srv/zcashd (owned by zcash in the image,
-    # so a fresh named volume inherits writable ownership).
-    user: "2001:2001"
-    command:
-      - zcashd
-      - -conf=/dev/null
-      - -printtoconsole
-      - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
-      - -listen=0
-      - -dnsseed=0
-      - -dns=0
-      - -connect=0
-      - -server=1
-      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
-      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
-      - -rpcbind=0.0.0.0
-      - -rpcport=38232
-      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
-    environment:
-      ZCASHD_RPCUSER: ${ZCASHD_RPCUSER:-zebra}
-      ZCASHD_RPCPASSWORD: ${ZCASHD_RPCPASSWORD:-zebra}
-      ZCASHD_RPCBIND: 0.0.0.0
-      ZCASHD_RPCPORT: "38232"
-      ZCASHD_ALLOWIP: ${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
-    volumes:
-      - ${Z3_ZCASHD_DATA_PATH:-zcashd}:/srv/zcashd
-    ports:
-      - "${Z3_ZCASHD_HOST_RPC_BIND:-127.0.0.1}:${Z3_ZCASHD_HOST_RPC_PORT:-60232}:38232"
-    healthcheck:
-      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-
   # ===========================================================================
   # Monitoring stack (--profile monitoring)
   # ===========================================================================
@@ -356,8 +307,6 @@ volumes:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zaino
   zallet:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet
-  zcashd:
-    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zcashd
   prometheus_data:
   grafana_data:
   alertmanager_data:

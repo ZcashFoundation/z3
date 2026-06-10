@@ -8,10 +8,9 @@ For the public contract (network names, volume names, port matrix), see [`contra
 
 ```text
 docker-compose.yml              Base stack (Zebra + Zaino + Zallet + optional profiles)
-docker-compose.testnet.yml      Testnet overlay (zcashd network flag)
 docker-compose.regtest.yml      Regtest overlay (structural differences only)
 .env.mainnet                    Mainnet selection + canonical ports
-.env.testnet                    Testnet selection + overlay loader + offset ports
+.env.testnet                    Testnet selection + offset ports
 .env.regtest                    Regtest selection + overlay loader
 .env.example                    Reference for every public override
 .env                            Operator-specific overrides (gitignored, optional)
@@ -84,15 +83,14 @@ Volumes and networks not part of the contract (Prometheus data, Compose configs)
 
 ### `COMPOSE_FILE` for overlay loading
 
-`.env.testnet` and `.env.regtest` include `COMPOSE_FILE` so the right overlay
-is loaded with the base compose:
+`.env.regtest` includes `COMPOSE_FILE` so the regtest overlay is loaded with
+the base compose:
 
 ```env
-COMPOSE_FILE=docker-compose.yml:docker-compose.testnet.yml
 COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
 ```
 
-When run with `--env-file .env.<network>`, Compose loads both files and merges them. The colon-separated list is processed left to right; later files override earlier ones. The testnet overlay only adds zcashd's `-testnet` command and matching healthcheck. The regtest overlay contains the peerless healthcheck, username/password auth on Zaino, zcashd's `-regtest` mode, and the optional rpc-router.
+When run with `--env-file .env.regtest`, Compose loads both files and merges them. The colon-separated list is processed left to right; later files override earlier ones. The regtest overlay contains the peerless healthcheck, username/password auth on Zaino, and the optional rpc-router. Testnet needs no overlay: `.env.testnet` sets `COMPOSE_FILE=docker-compose.yml` and selects the network through `Z3_NETWORK=Testnet`.
 
 ### Compose file merge rules
 

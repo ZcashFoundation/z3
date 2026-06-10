@@ -39,9 +39,6 @@ jobs:
           docker compose --env-file .env.mainnet --profile monitoring config --quiet
           docker compose --env-file .env.testnet --profile monitoring config --quiet
           docker compose --env-file .env.regtest --profile monitoring config --quiet
-          docker compose --env-file .env.mainnet --profile zcashd config --quiet
-          docker compose --env-file .env.testnet --profile zcashd config --quiet
-          docker compose --env-file .env.regtest --profile zcashd config --quiet
 
       - name: Install Python deps (contract parser + JSON Schema validator)
         run: python3 -m pip install --quiet pyyaml jsonschema
@@ -136,26 +133,6 @@ jobs:
             sleep 2
           done
 
-      - name: Start zcashd comparator and verify RPC
-        run: |
-          docker compose --env-file .env.regtest --profile zcashd up -d zcashd
-          echo "Waiting for zcashd RPC on host port 62232..."
-          for i in $(seq 1 30); do
-            if RESULT=$(curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
-              -d '{"jsonrpc":"2.0","method":"getblockchaininfo","params":[],"id":1}' \
-              http://127.0.0.1:62232 2>/dev/null); then
-              echo "zcashd is ready"
-              echo "$RESULT" | jq .
-              break
-            fi
-            if [ "$i" -eq 30 ]; then
-              echo "zcashd failed to start"
-              docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50
-              exit 1
-            fi
-            sleep 2
-          done
-
       - name: Verify Zallet accepts compose command
         run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
 
@@ -176,15 +153,11 @@ jobs:
         if: failure()
         run: |
           echo "=== Container status ==="
-          docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
+          docker compose --env-file .env.regtest ps 2>&1 || true
           echo "=== Zebra logs ==="
           docker compose --env-file .env.regtest logs zebra --tail 50 2>&1 || true
           echo "=== Zaino logs ==="
           docker compose --env-file .env.regtest logs zaino --tail 50 2>&1 || true
-          echo "=== zcashd logs ==="
-          docker compose --env-file .env.regtest --profile zcashd logs zcashd --tail 50 2>&1 || true
-          echo "=== Container status ==="
-          docker compose --env-file .env.regtest --profile zcashd ps 2>&1 || true
 
   cookie-permission-smoke:
     # Regtest disables cookie auth, so the regtest smoke job does not exercise

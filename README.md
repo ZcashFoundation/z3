@@ -106,16 +106,6 @@ docker compose --env-file .env.<network> --profile monitoring up -d
 
 Default UI host ports are globally unique across the three networks (mainnet Grafana `3000`, testnet `13000`, regtest `23000`, and so on). Each is overridable: `Z3_GRAFANA_PORT`, `Z3_PROMETHEUS_PORT`, `Z3_ALERTMANAGER_PORT`, `Z3_JAEGER_UI_PORT`.
 
-### Optional zcashd comparator
-
-`zcashd` is available behind an opt-in profile for local comparison against the legacy node. It is not part of the default stack, uses its own volume, and starts with public P2P disabled:
-
-```bash
-docker compose --env-file .env.<network> --profile zcashd up -d zcashd
-```
-
-Default RPC credentials are `zebra` / `zebra` (override with `ZCASHD_RPCUSER` / `ZCASHD_RPCPASSWORD`). zcashd is amd64-only and runs under emulation on arm64.
-
 ### Stopping the stack
 
 ```bash
@@ -162,7 +152,7 @@ graph LR
 
 **Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service.
 
-Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, `Z3_ZALLET_IMAGE`, or `Z3_ZCASHD_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet), [zcashd](https://github.com/zcash/zcash).
+Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet).
 
 ### Service endpoints
 
@@ -176,7 +166,6 @@ Published host ports are chosen per `.env.<network>` so all networks coexist on 
 | Zaino gRPC (plaintext, no TLS) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
 | Zaino JSON-RPC | `http://localhost:<port>` | `Z3_ZAINO_HOST_JSON_RPC_PORT` |
 | Zallet RPC | `http://localhost:<port>` | `Z3_ZALLET_HOST_RPC_PORT` |
-| zcashd RPC (profile zcashd) | `http://localhost:<port>` | `Z3_ZCASHD_HOST_RPC_PORT` |
 
 Inside the network, services resolve by DNS name (`zebra`, `zaino`, `zallet`) on Zebra's per-network container ports.
 
@@ -281,8 +270,6 @@ DOCKER_PLATFORM=linux/arm64 docker compose --env-file .env.mainnet build zaino z
 docker compose --env-file .env.mainnet up -d
 ```
 
-The zcashd service is hardcoded `linux/amd64`; under `--profile zcashd` on arm64 hosts it runs through emulation.
-
 </details>
 
 <details>
@@ -306,11 +293,10 @@ Two namespaces keep stack-level settings separate from service-native settings:
 | Namespace | Scope | Examples |
 |-----------|-------|----------|
 | `Z3_*` | Stack-level settings: port matrix, image pins, volume paths, per-service log split, monitoring port matrix | `Z3_NETWORK`, `Z3_ZEBRA_HOST_RPC_PORT`, `Z3_ZEBRA_IMAGE`, `Z3_ZEBRA_RUST_LOG` |
-| `ZCASHD_*` | zcashd image entrypoint convention; passed through unchanged | `ZCASHD_RPCUSER`, `ZCASHD_RPCPASSWORD`, `ZCASHD_RPC_ALLOWIP` |
 | `ZEBRA_*` / `ZAINO_*` | Service-native config-rs vars (double-underscore is config-rs nesting) | `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` |
 | `DOCKER_PLATFORM`, `COMPOSE_*`, `RUST_LOG` | Ecosystem / shell standards | `DOCKER_PLATFORM=linux/arm64` |
 
-z3 sets the service-internal vars (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, `ZCASHD_RPCBIND`, etc.) inside the compose `environment:` blocks based on the public knobs above. Operators should not set those directly.
+z3 sets the service-internal vars (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, etc.) inside the compose `environment:` blocks based on the public knobs above. Operators should not set those directly.
 
 ### Common overrides
 
@@ -324,10 +310,6 @@ Z3_ZEBRA_IMAGE=zfnd/zebra:5.0.0
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
-
-# Override zcashd RPC credentials (passed straight to the image)
-ZCASHD_RPCUSER=alice
-ZCASHD_RPCPASSWORD=hunter2
 
 # Disable Zebra cookie auth (advanced; native Zebra config-rs var)
 ZEBRA_RPC__ENABLE_COOKIE_AUTH=false
@@ -349,7 +331,6 @@ Z3 declares each volume with an explicit `name:` so the external Docker identifi
 | `chain` | Zebra blockchain state (~300 GB mainnet, ~30 GB testnet) |
 | `zaino` | Zaino indexer database |
 | `zallet` | Zallet wallet database (contains keys) |
-| `zcashd` | Optional zcashd comparator chain state |
 | `cookie` | RPC authentication cookie for mainnet/testnet (regtest disables cookie auth) |
 
 Example concrete names: `z3-mainnet-chain`, `z3-testnet-cookie`, `z3-regtest-zallet`.
@@ -362,7 +343,6 @@ For backups, external SSDs, or shared storage, override volume paths in `.env`:
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
 Z3_ZAINO_DATA_PATH=/mnt/ssd/zaino-data
 Z3_ZALLET_DATA_PATH=/mnt/ssd/zallet-data
-Z3_ZCASHD_DATA_PATH=/mnt/ssd/zcashd-data
 ```
 
 Fix permissions before starting:
@@ -371,10 +351,9 @@ Fix permissions before starting:
 ./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state
 ./scripts/fix-permissions.sh zaino /mnt/ssd/zaino-data
 ./scripts/fix-permissions.sh zallet /mnt/ssd/zallet-data
-./scripts/fix-permissions.sh zcashd /mnt/ssd/zcashd-data
 ```
 
-Zebra, Zaino, Zallet, and zcashd each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
+Zebra, Zaino, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
 
 </details>
 

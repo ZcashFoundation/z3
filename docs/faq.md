@@ -73,7 +73,7 @@ The `local` driver rotates by default and is more efficient than `json-file`. Th
 
 Because `docker-compose.yml` doesn't set `deploy.resources.limits` on any service. The choice is deliberate for a node platform: a constrained limit that makes sense on a 4-core laptop will silently throttle a 32-core production host, and the bound that's right for one operator is wrong for the next.
 
-If you want to bound a single noisy service (a bulk indexer, a comparator, a one-off backfill) without hand-tuning everything else, add the limit in your operator-local override file rather than the tracked compose:
+If you want to bound a single noisy service (a bulk indexer, a one-off backfill) without hand-tuning everything else, add the limit in your operator-local override file rather than the tracked compose:
 
 ```yaml
 # docker-compose.override.yml (mainnet) or docker-compose.testnet.override.yml (testnet)
@@ -87,18 +87,6 @@ services:
 ```
 
 Keep the limit generous on the service you want to win contention (Zebra), tight on the service you want to lose it (the noisy consumer). Don't add limits to services you haven't actually seen misbehave, since under-sized limits cause more outages than they prevent.
-
----
-
-### Q: Is zcashd part of the default stack?
-
-No. zcashd is behind a Compose profile (`--profile zcashd`) and is opt-in. The plain `docker compose up -d` invocation does not start it, does not touch its data volume, and does not bind its host port. You enable it explicitly when you want a comparator for behavior diff:
-
-```bash
-docker compose --env-file .env.mainnet --profile zcashd up -d zcashd
-```
-
-The image is hardcoded to `linux/amd64` because the upstream zcashd image publishes amd64 only (declared in [`z3-contract.yaml`](../z3-contract.yaml) under `image_platforms:`). On Apple Silicon it runs under emulation regardless of your `DOCKER_PLATFORM` setting. That's intentional: otherwise an arm64-pinned operator would see image-pull failures on a service they may never enable. README → Optional zcashd comparator covers the three-network invocation matrix.
 
 ---
 
@@ -192,7 +180,7 @@ If you can't control the consumer, the next lever is compose-level CPU limits (t
 
 ### Q: Why does regtest use username/password instead of cookie auth?
 
-Because regtest is meant to look like zcashd-style local dev, where username/password auth is the convention every existing tutorial and client library assumes. The regtest overlay (`docker-compose.regtest.yml`) disables Zebra's cookie auth and adds an `rpc-router` sidecar that authenticates with `zebra` / `zebra` against both Zebra and zcashd, so the same RPC client works against either backend during comparator runs.
+Because regtest is meant to look like classic local dev, where username/password auth is the convention every existing tutorial and client library assumes. The regtest overlay (`docker-compose.regtest.yml`) disables Zebra's cookie auth and adds an `rpc-router` sidecar that authenticates with `zebra` / `zebra` against Zebra, so the same RPC client works without juggling cookie files.
 
 Cookie auth stays the default for mainnet and testnet, where Zaino and Zallet read the shared cookie volume directly. See [docs/regtest.md](regtest.md) for the full regtest workflow and the curl/grpcurl examples that use the regtest credentials.
 

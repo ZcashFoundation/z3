@@ -32,7 +32,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 
 COMPOSE_FILES = [
     ROOT / "docker-compose.yml",
-    ROOT / "docker-compose.testnet.yml",
     ROOT / "docker-compose.regtest.yml",
 ]
 CONTRACT_FILE = ROOT / "z3-contract.yaml"

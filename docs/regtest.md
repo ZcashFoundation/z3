@@ -52,19 +52,6 @@ Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source
 | Zaino gRPC | localhost:28137 | lightwalletd-compatible gRPC (plaintext h2c) |
 | Zebra RPC | http://localhost:29232 | Direct Zebra JSON-RPC |
 | Zallet RPC | http://localhost:50232 | Direct Zallet JSON-RPC |
-| zcashd RPC | http://localhost:62232 | Optional zcashd comparator (`--profile zcashd`) |
-
-## Optional zcashd comparator
-
-For local compatibility checks against zcashd, start the profiled zcashd service:
-
-```bash
-docker compose --env-file .env.regtest --profile zcashd up -d zcashd
-```
-
-The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and fixed NU activation heights that match the stack's regtest config (NU5 at height 2, earlier upgrades at height 1). It uses a separate Docker volume (`z3-regtest-zcashd`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
-
-The activation heights are hardcoded in `docker-compose.regtest.yml`, not operator-tunable env vars, so the comparator chain stays aligned with Zebra, Zaino, and Zallet. To experiment with a different upgrade era, edit the `-nuparams` flags in a local override file and point zcashd at a throwaway data volume (`Z3_ZCASHD_DATA_PATH`).
 
 ## Test routing
 
@@ -163,8 +150,7 @@ Regtest monitoring UI ports are Grafana `23000`, Prometheus `29094`, Jaeger UI `
 ## Notes
 
 - Credentials: `zebra` / `zebra` (hardcoded for regtest only)
-- Regtest activates upgrades through Canopy at block 1 and NU5/Orchard at block 2 (Zebra, Zaino, Zallet, and the zcashd comparator all agree)
+- Regtest activates upgrades through Canopy at block 1 and NU5/Orchard at block 2 (Zebra, Zaino, and Zallet all agree)
 - Zaino uses username/password auth in regtest (not cookie auth)
 - Zaino gRPC is plaintext h2c on all networks; terminate edge TLS at a reverse proxy if exposed beyond the host
-- zcashd is optional and only starts when the `zcashd` profile is enabled
 - The rpc-router source is in `rpc-router/`; it is built automatically on first `docker compose up`
