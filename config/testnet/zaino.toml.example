@@ -1,0 +1,5 @@
+# Zaino configuration: Testnet.
+#
+# All runtime settings come from environment variables in docker-compose.yml.
+# This file exists so the compose mount has a target; do not add values here
+# unless an operator-specific override is needed that env vars cannot express.

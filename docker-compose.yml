@@ -1,60 +1,81 @@
-# Shared defaults applied to all services via <<: *common
-# - logging: rotates logs (50MB x 5 files) to prevent unbounded disk growth
-# - cap_drop: removes all Linux capabilities (services run as non-root)
-# - security_opt: prevents privilege escalation via setuid binaries
-# See docs/docker-architecture.md for rationale.
+# Z3: a Zcash node platform.
+#
+# Run a network with:
+#   docker compose --env-file .env.mainnet up -d
+#   docker compose --env-file .env.testnet up -d
+#   docker compose --env-file .env.regtest up -d
+#
+# Default invocation (no --env-file) brings up mainnet.
+# Operator-specific overrides go in .env (auto-loaded, gitignored).
+#
+# Public contract identifiers (network, volume, port names) are defined in
+# z3-contract.yaml. Image pins below have inline fallbacks and can be
+# overridden per service via Z3_*_IMAGE. Downstream services attach via the
+# documented network and cookie volume; see docs/integrations/.
+#
+# Shared defaults applied to every service via <<: *common:
+#   cap_drop     removes all Linux capabilities (services run as non-root)
+#   security_opt prevents privilege escalation via setuid binaries
+#
+# Logging is deliberately not set here. Pinning a driver in Compose overrides
+# the operator's Docker daemon default (journald, local, a remote collector).
+# To bound log growth, set a rotating default in /etc/docker/daemon.json; see
+# docs/faq.md ("Why doesn't z3 set a logging driver").
+
+name: z3-mainnet
+
 x-common: &common
-  logging:
-    driver: json-file
-    options:
-      max-size: "50m"
-      max-file: "5"
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
 
 services:
   zebra:
-    image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
+    # Zebra is multi-arch; Docker selects the host's native variant.
+    # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
+    platform: ${DOCKER_PLATFORM:-}
     build:
       context: ./zebra
       dockerfile: docker/Dockerfile
       target: runtime
       args:
-        FEATURES: ${ZEBRA_BUILD_FEATURES:-default-release-binaries}
-    container_name: z3_zebra
+        FEATURES: ${Z3_ZEBRA_BUILD_FEATURES:-default-release-binaries}
     restart: unless-stopped
     stop_grace_period: 30s
     <<: *common
     # Zebra's entrypoint runs mkdir/chown before dropping privileges via setpriv.
-    # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
+    # Those operations need capabilities that cap_drop: [ALL] removes.
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
-    # Optional ZEBRA_* vars (metrics, OpenTelemetry) pass through from .env when set.
-    # They must NOT be listed in environment: with empty defaults because config-rs
-    # treats empty strings as values and fails to parse them (e.g., "" as a socket address).
+    # Optional operator overrides (e.g., OpenTelemetry endpoints) load from .env.
+    # config-rs treats empty strings as values, so empty-defaulted vars cannot
+    # appear in the explicit environment: block; they must be omitted instead.
     env_file:
       - path: ./.env
         required: false
     environment:
-      RUST_LOG: ${Z3_ZEBRA_RUST_LOG:-info}
-      ZEBRA_NETWORK__NETWORK: ${NETWORK_NAME:-Mainnet}
-      ZEBRA_RPC__LISTEN_ADDR: 0.0.0.0:${Z3_ZEBRA_RPC_PORT:-18232}
-      ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ENABLE_COOKIE_AUTH:-true}
-      ZEBRA_RPC__COOKIE_DIR: ${COOKIE_AUTH_FILE_DIR:-/var/run/auth}
+      RUST_LOG: ${Z3_ZEBRA_RUST_LOG:-${RUST_LOG:-info}}
+      ZEBRA_NETWORK__NETWORK: ${Z3_NETWORK:-Mainnet}
+      ZEBRA_RPC__LISTEN_ADDR: 0.0.0.0:${Z3_ZEBRA_RPC_PORT:-8232}
+      ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}
+      ZEBRA_RPC__COOKIE_DIR: /var/run/auth
       ZEBRA_TRACING__FILTER: ${ZEBRA_TRACING__FILTER:-info}
       ZEBRA_STATE__CACHE_DIR: /home/zebra/.cache/zebra
       ZEBRA_HEALTH__LISTEN_ADDR: 0.0.0.0:8080
       ZEBRA_HEALTH__MIN_CONNECTED_PEERS: ${ZEBRA_HEALTH__MIN_CONNECTED_PEERS:-1}
       ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND: ${ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND:-2}
       ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS: ${ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS:-false}
+      ZEBRA_METRICS__ENDPOINT_ADDR: ${ZEBRA_METRICS__ENDPOINT_ADDR:-0.0.0.0:9999}
     volumes:
-      - ${Z3_ZEBRA_DATA_PATH:-zebra_data}:/home/zebra/.cache/zebra
-      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}
+      - ${Z3_CHAIN_DATA_PATH:-chain}:/home/zebra/.cache/zebra
+      - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth
+    # p2p (8233 mainnet / 18233 testnet) is published so the node accepts
+    # inbound peer connections; without it Zebra makes only outbound peers.
+    # Behind NAT or a firewall, also set ZEBRA_NETWORK__EXTERNAL_ADDR to the
+    # address peers should dial. Regtest is peerless and omits this (see overlay).
     ports:
-      - "${Z3_ZEBRA_HOST_RPC_PORT:-18232}:${Z3_ZEBRA_RPC_PORT:-18232}"
+      - "${Z3_ZEBRA_HOST_RPC_PORT:-8232}:${Z3_ZEBRA_RPC_PORT:-8232}"
+      - "${Z3_ZEBRA_HOST_P2P_PORT:-8233}:${Z3_ZEBRA_P2P_PORT:-8233}"
       - "${Z3_ZEBRA_HOST_HEALTH_PORT:-8080}:8080"
-    networks:
-      - z3_net
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ready || exit 1"]
       interval: 30s
@@ -63,50 +84,78 @@ services:
       start_period: 90s
       start_interval: 5s
 
+  # Sidecar: makes Zebra's RPC cookie readable inside the shared auth volume.
+  # Zebra writes /var/run/auth/.cookie with mode 0600 owned by uid 10001;
+  # Zaino, Zallet, and attached services may run as different users.
+  cookie-permissions:
+    image: alpine:3
+    restart: unless-stopped
+    <<: *common
+    # FOWNER is needed to chmod Zebra's cookie after cap_drop: [ALL].
+    cap_add: [FOWNER]
+    environment:
+      ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}
+    volumes:
+      - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          if [ -f /var/run/auth/.cookie ]; then
+            chmod 0644 /var/run/auth/.cookie 2>/dev/null
+          fi
+          sleep 5
+        done
+    depends_on:
+      zebra:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "if [ \"$${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}\" = \"false\" ]; then exit 0; fi; test -r /var/run/auth/.cookie"]
+      interval: 5s
+      timeout: 2s
+      retries: 12
+      start_period: 5s
+
   zaino:
-    # Image built by z3 CI from zingolabs/zaino@dev branch.
-    # The sha-* tag is a z3 commit hash, not a zaino one.
-    # Upstream: https://github.com/zingolabs/zaino (zainod 0.2.0 / Zebra 4.3.0 compatible)
-    image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
+    # The -no-tls tag compiles out Zaino's "TLS required on a non-private bind"
+    # guard, so intra-container gRPC on 0.0.0.0:8137 runs as plaintext h2c.
+    # NO_TLS=true below makes a local arm64 build match that pin. Terminate
+    # edge TLS at a reverse proxy if Zaino is exposed beyond the host.
+    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.4.0-rc.2-no-tls}
+    # Zaino publishes linux/amd64 only; arm64 hosts run under emulation
+    # unless the operator builds from the ./zaino submodule.
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
       dockerfile: Dockerfile
-    container_name: z3_zaino
+      args:
+        NO_TLS: "true"
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
-    # Zaino's entrypoint runs mkdir/chown before dropping privileges via setpriv.
-    # These operations need capabilities that cap_drop: [ALL] removes, so we add them back.
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
     command: ["start", "--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
         condition: service_healthy
+      cookie-permissions:
+        condition: service_healthy
     environment:
-      RUST_LOG: ${ZAINO_RUST_LOG:-info,reqwest=warn,hyper_util=warn}
-      RUST_BACKTRACE: ${ZAINO_RUST_BACKTRACE:-full}
-      ZAINO_NETWORK: ${NETWORK_NAME:-Mainnet}
-      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS: zebra:${Z3_ZEBRA_RPC_PORT:-18232}
-      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH: ${COOKIE_AUTH_FILE_DIR:-/var/run/auth}/.cookie
-      ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:${ZAINO_GRPC_PORT:-8137}
-      ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:${ZAINO_JSON_RPC_PORT:-8237}
-      ZAINO_GRPC_SETTINGS__TLS__CERT_PATH: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
-      ZAINO_GRPC_SETTINGS__TLS__KEY_PATH: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
+      RUST_LOG: ${Z3_ZAINO_RUST_LOG:-${RUST_LOG:-info,reqwest=warn,hyper_util=warn}}
+      RUST_BACKTRACE: ${RUST_BACKTRACE:-full}
+      ZAINO_NETWORK: ${Z3_NETWORK:-Mainnet}
+      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS: zebra:${Z3_ZEBRA_RPC_PORT:-8232}
+      ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH: /var/run/auth/.cookie
+      ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:8137
+      ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:8237
     volumes:
-      - ${Z3_ZAINO_DATA_PATH:-zaino_data}:/app/data
-      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}:ro
-      - ./config/zaino.toml:/etc/zaino/zindexer.toml:ro
-    configs:
-      - source: zaino_tls_cert
-        target: ${ZAINO_GRPC_TLS_CERT_PATH:-/var/run/zaino/tls/zaino.crt}
-      - source: zaino_tls_key
-        target: ${ZAINO_GRPC_TLS_KEY_PATH:-/var/run/zaino/tls/zaino.key}
+      - ${Z3_ZAINO_DATA_PATH:-zaino}:/app/data
+      - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
+      - ${Z3_CONFIG_DIR:-./config/mainnet}/zaino.toml:/etc/zaino/zindexer.toml:ro
     ports:
-      - "${ZAINO_HOST_GRPC_PORT:-8137}:${ZAINO_GRPC_PORT:-8137}"
-      - "${ZAINO_HOST_JSONRPC_PORT:-8237}:${ZAINO_JSON_RPC_PORT:-8237}"
-    networks:
-      - z3_net
+      - "${Z3_ZAINO_HOST_GRPC_PORT:-8137}:8137"
+      - "${Z3_ZAINO_HOST_JSON_RPC_PORT:-8237}:8237"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8137' 2>/dev/null || exit 1"]
       interval: 30s
@@ -116,7 +165,7 @@ services:
       start_interval: 5s
 
   zallet:
-    image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
+    image: ${Z3_ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zallet
@@ -124,7 +173,6 @@ services:
       target: runtime
       tags:
         - z3_zallet:local
-    container_name: z3_zallet
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
@@ -133,78 +181,29 @@ services:
     depends_on:
       zebra:
         condition: service_healthy
+      cookie-permissions:
+        condition: service_healthy
     environment:
-      RUST_LOG: ${ZALLET_RUST_LOG:-info,hyper_util=warn,reqwest=warn}
+      RUST_LOG: ${Z3_ZALLET_RUST_LOG:-${RUST_LOG:-info,hyper_util=warn,reqwest=warn}}
     volumes:
-      - ${Z3_ZALLET_DATA_PATH:-zallet_data}:/var/lib/zallet
-      - ${Z3_COOKIE_PATH:-shared_cookie_volume}:${COOKIE_AUTH_FILE_DIR:-/var/run/auth}:ro
-      - ./config/zallet.toml:/etc/zallet/zallet.toml:ro
-      - ./config/zallet_identity.txt:/etc/zallet/identity.txt:ro
+      - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/lib/zallet
+      - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
+      - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet.toml:/etc/zallet/zallet.toml:ro
+      - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet_identity.txt:/etc/zallet/identity.txt:ro
     ports:
-      - "${ZALLET_HOST_RPC_PORT:-28232}:${ZALLET_RPC_PORT:-28232}"
-    networks:
-      - z3_net
-    # No healthcheck: distroless image has no shell/curl
+      - "${Z3_ZALLET_HOST_RPC_PORT:-28232}:28232"
+    # No healthcheck: the distroless image has no shell or curl.
 
-  zcashd:
-    # Optional zcashd node. It is intentionally isolated from the
-    # public P2P network unless the operator overrides the command.
-    profiles: [zcashd]
-    image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
-    # The default zcashd image currently publishes linux/amd64 only.
-    platform: ${ZCASHD_DOCKER_PLATFORM:-linux/amd64}
-    container_name: z3_zcashd
-    restart: unless-stopped
-    stop_grace_period: 30s
-    <<: *common
-    user: "999:999"
-    command:
-      - zcashd
-      - -conf=/dev/null
-      - -printtoconsole
-      - -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
-      - -listen=0
-      - -dnsseed=0
-      - -dns=0
-      - -connect=0
-      - -server=1
-      - -rpcuser=${ZCASHD_RPCUSER:-zebra}
-      - -rpcpassword=${ZCASHD_RPCPASSWORD:-zebra}
-      - -rpcbind=0.0.0.0
-      - -rpcport=${ZCASHD_RPC_PORT:-38232}
-      - -rpcallowip=${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
-    environment:
-      ZCASHD_RPCUSER: ${ZCASHD_RPCUSER:-zebra}
-      ZCASHD_RPCPASSWORD: ${ZCASHD_RPCPASSWORD:-zebra}
-      ZCASHD_RPCBIND: 0.0.0.0
-      ZCASHD_RPCPORT: ${ZCASHD_RPC_PORT:-38232}
-      ZCASHD_ALLOWIP: ${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
-    volumes:
-      - ${Z3_ZCASHD_DATA_PATH:-zcashd_data}:/home/zcash/.zcash
-    ports:
-      - "${ZCASHD_HOST_RPC_BIND:-127.0.0.1}:${ZCASHD_HOST_RPC_PORT:-38232}:${ZCASHD_RPC_PORT:-38232}"
-    networks:
-      - z3_net
-    healthcheck:
-      test: ["CMD-SHELL", "zcash-cli -conf=/dev/null -rpcconnect=127.0.0.1 -rpcport=$${ZCASHD_RPCPORT} -rpcuser=$${ZCASHD_RPCUSER} -rpcpassword=$${ZCASHD_RPCPASSWORD} getblockchaininfo >/dev/null"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 60s
-
-  # =============================================================================
-  # Monitoring Stack (enabled with --profile monitoring)
-  # =============================================================================
-  # Usage: docker compose --profile monitoring up -d
-  # Access:
-  #   - Grafana:      http://localhost:3000 (admin/admin)
-  #   - Prometheus:   http://localhost:9094
-  #   - Jaeger:       http://localhost:16686
-  #   - AlertManager: http://localhost:9093
+  # ===========================================================================
+  # Monitoring stack (--profile monitoring)
+  # ===========================================================================
+  # Mainnet defaults: Grafana 3000, Prometheus 9094, Jaeger UI 16686,
+  # Jaeger OTLP 4317/4318, Jaeger spanmetrics 8889, AlertManager 9093.
+  # Testnet and regtest env files offset every published monitoring port so
+  # multiple networks coexist on one host without binding collisions.
 
   jaeger:
     image: jaegertracing/jaeger:2.1.0
-    container_name: z3_jaeger
     profiles: [monitoring]
     restart: unless-stopped
     <<: *common
@@ -213,12 +212,10 @@ services:
     command:
       - --config=/etc/jaeger/config.yaml
     ports:
-      - "${JAEGER_UI_PORT:-16686}:16686"
-      - "${JAEGER_OTLP_GRPC_PORT:-4317}:4317"
-      - "${JAEGER_OTLP_HTTP_PORT:-4318}:4318"
-      - "${JAEGER_SPANMETRICS_PORT:-8889}:8889"
-    networks:
-      - z3_net
+      - "${Z3_JAEGER_UI_PORT:-16686}:16686"
+      - "${Z3_JAEGER_OTLP_GRPC_PORT:-4317}:4317"
+      - "${Z3_JAEGER_OTLP_HTTP_PORT:-4318}:4318"
+      - "${Z3_JAEGER_SPANMETRICS_PORT:-8889}:8889"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:16686/ || exit 1"]
       interval: 5s
@@ -227,7 +224,6 @@ services:
 
   prometheus:
     image: prom/prometheus:v3.2.0
-    container_name: z3_prometheus
     profiles: [monitoring]
     restart: unless-stopped
     <<: *common
@@ -243,9 +239,7 @@ services:
       - '--web.enable-lifecycle'
       - '--web.enable-admin-api'
     ports:
-      - "${PROMETHEUS_PORT:-9094}:9090"
-    networks:
-      - z3_net
+      - "${Z3_PROMETHEUS_PORT:-9094}:9090"
     depends_on:
       jaeger:
         condition: service_healthy
@@ -257,7 +251,6 @@ services:
 
   grafana:
     image: grafana/grafana:11.5.1
-    container_name: z3_grafana
     profiles: [monitoring]
     restart: unless-stopped
     <<: *common
@@ -267,11 +260,9 @@ services:
       - grafana_data:/var/lib/grafana
     environment:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/zebra_overview.json
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-admin}
     ports:
-      - "${GRAFANA_PORT:-3000}:3000"
-    networks:
-      - z3_net
+      - "${Z3_GRAFANA_PORT:-3000}:3000"
     depends_on:
       prometheus:
         condition: service_healthy
@@ -286,7 +277,6 @@ services:
 
   alertmanager:
     image: prom/alertmanager:v0.28.1
-    container_name: z3_alertmanager
     profiles: [monitoring]
     restart: unless-stopped
     <<: *common
@@ -297,33 +287,36 @@ services:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
     ports:
-      - "${ALERTMANAGER_PORT:-9093}:9093"
-    networks:
-      - z3_net
+      - "${Z3_ALERTMANAGER_PORT:-9093}:9093"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:9093/-/healthy || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
 
+# Named volumes are declared with explicit name: so the external Docker
+# identifier is `${COMPOSE_PROJECT_NAME}-<suffix>` rather than the default
+# `${COMPOSE_PROJECT_NAME}_<suffix>`. Downstream consumers reference these
+# external names directly; see docs/contract.md for the public contract.
 volumes:
-  zebra_data:
-  zcashd_data:
-  zaino_data:
-  zallet_data:
-  shared_cookie_volume:
+  chain:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-chain
+  cookie:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-cookie
+  zaino:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zaino
+  zallet:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet
   prometheus_data:
   grafana_data:
   alertmanager_data:
 
+# The default network is named explicitly so consumers attach via a stable
+# identifier (not subject to Compose's project-prefix behavior).
 networks:
-  z3_net:
-    driver: bridge
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}
 
 configs:
-  zaino_tls_cert:
-    file: ./config/tls/zaino.crt
-  zaino_tls_key:
-    file: ./config/tls/zaino.key
   prometheus_config:
     file: ./observability/prometheus/prometheus.yaml

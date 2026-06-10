@@ -1,0 +1,22 @@
+# Zebra regtest configuration. `scripts/setup-network.sh regtest` copies this
+# template into a live gitignored config file on first run.
+#
+# Zebra's default regtest stops at Canopy. Activating NU5, NU6, and NU6.1
+# here matches Zaino's hardcoded regtest ActivationHeights
+# (ZEBRAD_DEFAULT_ACTIVATION_HEIGHTS: NU5=2, NU6=2, NU6.1=1000) so its sync
+# loop can read the chain Zebra produces. zebrad reads ~/.config/zebrad.toml
+# automatically. NU6.1 must be 1000 (not 2) to match Zaino's chain view.
+
+[network]
+network = "Regtest"
+
+[network.testnet_parameters.activation_heights]
+BeforeOverwinter = 1
+Overwinter = 1
+Sapling = 1
+Blossom = 1
+Heartwood = 1
+Canopy = 1
+NU5 = 2
+NU6 = 2
+"NU6.1" = 1000

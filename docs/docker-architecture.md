@@ -1,143 +1,173 @@
 # Docker Compose Architecture
 
-This document explains the architectural decisions, patterns, and modern Docker Compose features used in the Z3 stack. It serves as a reference for contributors and operators who need to understand *why* things are structured the way they are.
+This document explains the Docker Compose patterns and runtime behavior used in the z3 stack. It is a reference for contributors and operators who need to understand how the stack is structured.
+
+For the public contract (network names, volume names, port matrix), see [`contract.md`](contract.md).
 
 ## Overview
 
 ```text
 docker-compose.yml              Base stack (Zebra + Zaino + Zallet + optional profiles)
 docker-compose.regtest.yml      Regtest overlay (structural differences only)
-.env.example                    Reference for all overridable variables
-.env                            User overrides (gitignored, optional)
-.env.regtest                    Regtest configuration (tracked)
-config/                         All service configs (mainnet defaults + regtest/ subdirectory)
-scripts/                        Operational scripts (regtest-init, check-zebra-readiness, etc.)
+.env.mainnet                    Mainnet selection + canonical ports
+.env.testnet                    Testnet selection + offset ports
+.env.regtest                    Regtest selection + overlay loader
+.env.example                    Reference for every public override
+.env                            Operator-specific overrides (gitignored, optional)
+config/mainnet/                 Mainnet Zallet + Zaino configs + identity file
+config/testnet/                 Testnet equivalents
+config/regtest/                 Regtest equivalents
+scripts/                        Operational scripts (regtest-init, fix-permissions, etc.)
 ```
 
-The core principle: **`docker-compose.yml` is self-sufficient**. Every variable uses `${VAR:-default}` syntax, so `docker compose up` works on a fresh clone with zero configuration files. The `.env` file is purely optional; users create it only when they want to override a default.
+The core principle: **`docker-compose.yml` is self-sufficient for mainnet**. Every variable uses `${VAR:-default}` syntax, so `docker compose up` works on a fresh clone with zero configuration files. The per-network env files exist to switch networks; `.env` is purely optional operator overrides.
 
-## Defaults-in-Compose Pattern
-
-### How it works
+## Defaults-in-compose pattern
 
 Every variable reference in `docker-compose.yml` includes a default value:
 
 ```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
+image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
 environment:
-  ZEBRA_NETWORK__NETWORK: ${NETWORK_NAME:-Mainnet}
+  ZEBRA_NETWORK__NETWORK: ${Z3_NETWORK:-Mainnet}
 volumes:
-  - ${Z3_ZEBRA_DATA_PATH:-zebra_data}:/home/zebra/.cache/zebra
+  - ${Z3_CHAIN_DATA_PATH:-chain}:/home/zebra/.cache/zebra
 ports:
-  - "${Z3_ZEBRA_HOST_RPC_PORT:-18232}:${Z3_ZEBRA_RPC_PORT:-18232}"
+  - "${Z3_ZEBRA_HOST_RPC_PORT:-8232}:${Z3_ZEBRA_RPC_PORT:-8232}"
 ```
 
 Docker Compose resolves `${VAR:-default}` as: use `VAR` if set and non-empty, otherwise use `default`. Values come from (highest precedence first):
 
-1. Shell environment variables (`ZEBRA_IMAGE=custom docker compose up`)
-2. `.env` file in the project root
-3. The `:-default` fallback in the compose file
+1. Shell environment variables (`Z3_ZEBRA_IMAGE=custom docker compose up`)
+2. `--env-file <path>` arguments
+3. `.env` file in the project root (auto-loaded)
+4. The `:-default` fallback in the compose file
 
-### Why not a tracked `.env` with all defaults?
+The mainnet env file (`.env.mainnet`) sets only `COMPOSE_PROJECT_NAME`, `Z3_NETWORK`, and `Z3_CONFIG_DIR` because the compose defaults already match mainnet. Testnet and regtest env files set additional overrides (container ports, host ports, network selection) to switch the stack.
 
-The previous approach kept a 183-line `.env` file tracked in git with all values populated. This had problems:
+## Multi-environment support
 
-- **Mandatory dependency**: `docker compose up` failed without the file
-- **Duplication**: Three per-network copies (mainnet/testnet/regtest) with 95% identical content
-- **Drift**: Changes to defaults required updating multiple files
-- **Merge conflicts**: Users who modified `.env` locally hit conflicts on every pull
+### Per-network Compose projects
 
-With defaults in the compose file, none of these problems exist. A Testnet user creates a 1-line `.env`:
+Z3 runs as one of three Compose projects: `z3-mainnet`, `z3-testnet`, `z3-regtest`. Each is a separate logical instance with its own resources. Project name comes from `COMPOSE_PROJECT_NAME` in the env file.
 
-```env
-NETWORK_NAME=Testnet
+| Network | Project | Selected via |
+|---------|---------|--------------|
+| Mainnet | `z3-mainnet` | `docker compose --env-file .env.mainnet up` |
+| Testnet | `z3-testnet` | `docker compose --env-file .env.testnet up` |
+| Regtest | `z3-regtest` | `docker compose --env-file .env.regtest up` |
+
+Compose's native project boundary handles isolation: each project has its own containers, network, and volumes. Mainnet, testnet, and regtest can run concurrently on one host without collisions because their published host ports differ. Testnet keeps Zebra's canonical host ports; regtest uses explicit host ports where a simple offset would collide with another service.
+
+### Explicit `name:` declarations
+
+Compose's default behavior prefixes every volume and network with `${COMPOSE_PROJECT_NAME}_`. For internal services this is fine; for the public contract identifiers that consumers attach to, it is brittle: a project rename silently breaks every consumer.
+
+Z3 declares external-facing resources with explicit `name:`:
+
+```yaml
+volumes:
+  chain:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-chain
+  cookie:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-cookie
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}
 ```
 
-Everything else inherits from the compose defaults.
+The `name:` field is documented as "used as-is and not scoped with the project name" (Docker Compose reference). This makes `z3-testnet-cookie` and `z3-testnet` the stable external identifiers consumers reference via `external: true, name: ...`. Renaming the Compose project would not affect them.
 
-## Multi-Environment Support
+Volumes and networks not part of the contract (Prometheus data, Compose configs) keep the default prefix; they are internal.
 
-### `COMPOSE_PROJECT_NAME` — Volume and Network Isolation
+### `COMPOSE_FILE` for overlay loading
 
-Docker Compose automatically prefixes all resources (volumes, networks) with the project name. This gives each environment its own isolated storage without parameterizing volume names:
-
-| Environment | Project name | Volume on disk |
-|------------|-------------|----------------|
-| Mainnet | `z3` (default, from directory) | `z3_zebra_data` |
-| Regtest | `z3-regtest` (from `.env.regtest`) | `z3-regtest_zebra_data` |
-
-The same `zebra_data` volume name in the compose file creates different actual volumes depending on the project name. No naming tricks needed.
-
-### `COMPOSE_FILE` — Automatic Overlay Loading
-
-`.env.regtest` includes:
+`.env.regtest` includes `COMPOSE_FILE` so the regtest overlay is loaded with
+the base compose:
 
 ```env
 COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml
 ```
 
-When you run `docker compose --env-file .env.regtest up`, Compose automatically loads both files and merges them. The colon-separated list is processed left to right; later files override earlier ones.
+When run with `--env-file .env.regtest`, Compose loads both files and merges them. The colon-separated list is processed left to right; later files override earlier ones. The regtest overlay contains the peerless healthcheck, username/password auth on Zaino, and the optional rpc-router. Testnet needs no overlay: `.env.testnet` sets `COMPOSE_FILE=docker-compose.yml` and selects the network through `Z3_NETWORK=Testnet`.
 
-This means the regtest overlay only needs to contain *structural differences* from the base (different healthchecks, additional services, authentication changes). Everything else is inherited.
+### Compose file merge rules
 
-### Compose File Merge Rules
-
-When the regtest overlay defines the same service as the base, attributes merge as follows:
+When an overlay defines the same service as the base, attributes merge as follows:
 
 | Attribute type | Merge behavior |
 |----------------|---------------|
-| Scalars (`image`, `command`, `container_name`) | Override replaces |
+| Scalars (`image`, `command`) | Override replaces |
 | `environment` | Merge by key name; override wins on conflict |
 | `volumes` (service-level) | Merge by mount target path; same target = override wins |
 | `ports` | Append |
 | `healthcheck` | Override replaces entirely |
 | `build.args` | Merge by key name; override wins on conflict |
 
-Example: the base mounts `./config/zaino.toml` at `/etc/zaino/zindexer.toml`. The regtest overlay mounts `./config/regtest/zaino.toml` at the same target path. Because the target matches, the overlay's mount replaces the base's; no duplication, no conflict.
+### `!override` YAML tag
 
-### `!override` YAML Tag — Replacing Attributes in Overlays
-
-Standard YAML merge can add and overwrite keys but cannot *remove* them. Docker Compose v2.24+ added the `!override` tag to solve this:
+Standard YAML merge can add and overwrite keys but cannot *remove* them. Docker Compose v2.24.4+ supports the `!override` tag used here:
 
 ```yaml
-# In docker-compose.regtest.yml — replaces Zaino's entire environment block,
-# removing the cookie auth path that the base compose sets
 services:
   zaino:
     environment: !override
       RUST_LOG: info
       ZAINO_NETWORK: Regtest
-      # ... only regtest-relevant vars, no cookie path
+      # only regtest-relevant vars; cookie path from base is dropped
 ```
 
 `!override` fully replaces the attribute instead of merging. The regtest overlay uses this on Zaino's `environment` to switch from cookie-based authentication (base compose) to username/password authentication (credentials in `config/regtest/zaino.toml`).
 
-A related tag, `!reset`, clears an attribute to its default value (e.g., `ports: !reset []` empties the port list instead of appending).
+A related tag, `!reset`, clears an attribute to its default value. This stack requires Docker Compose v2.24.4 or later for these tags.
 
-Both tags require Docker Compose v2.24.0 or later.
+## Per-network configuration
 
-## Extension Fields and YAML Anchors
+### Zallet config files
 
-### `x-common` — Shared Service Configuration
+Zallet's `[indexer]` block hardcodes the validator address it connects to (Zebra's JSON-RPC). Because the JSON-RPC port differs per network (Mainnet 8232, Testnet 18232, Regtest 18232), Z3 ships one Zallet config per network:
+
+```
+config/mainnet/zallet.toml      validator_address = "zebra:8232"
+config/testnet/zallet.toml      validator_address = "zebra:18232"
+config/regtest/zallet.toml      validator_address = "zebra:18232" (username/password auth)
+```
+
+The compose mount path is templated:
+
+```yaml
+volumes:
+  - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet.toml:/etc/zallet/zallet.toml:ro
+```
+
+`Z3_CONFIG_DIR` is set per env file (`./config/mainnet`, `./config/testnet`, `./config/regtest`). To change Zallet behavior, edit the per-network file directly.
+
+### Zaino config files
+
+Zaino's config is empty for mainnet and testnet (all settings come from env vars); regtest needs a non-empty file because it uses username/password auth that cannot be set via env vars (Zaino blocks env vars containing "password" for security). The compose mounts `${Z3_CONFIG_DIR}/zaino.toml` for symmetry with Zallet.
+
+### Zallet identity files
+
+Each network has its own age-encryption identity at `config/<network>/zallet_identity.txt`. The file is gitignored. Identities are generated by `scripts/setup-network.sh <network>` (which `scripts/regtest-init.sh` delegates to for regtest). See the README Quick start.
+
+## Extension fields and YAML anchors
+
+### `x-common`: shared service configuration
 
 ```yaml
 x-common: &common
-  logging:
-    driver: json-file
-    options:
-      max-size: "50m"
-      max-file: "5"
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
 ```
 
-Services reference this with `<<: *common`, which merges all keys from the anchor into the service definition. This ensures consistent log rotation and security hardening across all services without repeating the configuration.
+Services reference this with `<<: *common` for consistent security hardening without repeating the configuration. Logging is intentionally absent (see "Log rotation" below).
 
-Top-level keys starting with `x-` are *extension fields*; Docker Compose ignores them during processing but they serve as anchor sources for YAML reuse.
+Top-level keys starting with `x-` are *extension fields*; Compose ignores them during processing but they serve as anchor sources for YAML reuse.
 
-### Zebra's `setpriv` Entrypoint
+### Zebra's `setpriv` entrypoint
 
-Zebra's Docker entrypoint starts as root, runs `mkdir` and `chown` to set up mounted volume directories, then uses `setpriv` (part of `util-linux`, included in Debian trixie) to drop to a non-root user. These pre-privilege-drop operations need capabilities that `cap_drop: [ALL]` removes, so Zebra adds back only the 5 it needs:
+Zebra's Docker entrypoint starts as root, runs `mkdir` and `chown` to set up mounted volume directories, then uses `setpriv` (part of `util-linux`, included in Debian trixie) to drop to a non-root user. These pre-privilege-drop operations need capabilities that `cap_drop: [ALL]` removes, so Zebra adds back only the five it needs:
 
 ```yaml
 cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
@@ -147,9 +177,9 @@ Zaino and Zallet run as non-root from the start and work with `cap_drop: [ALL]` 
 
 ## Healthchecks
 
-### `start_interval` — Two-Speed Healthchecks
+### `start_interval`: two-speed healthchecks
 
-Docker Engine 25.0+ supports `start_interval`, which checks more frequently during startup then backs off:
+Docker Engine 25.0+ supports `start_interval`, which checks more frequently during startup and then backs off:
 
 ```yaml
 healthcheck:
@@ -159,11 +189,11 @@ healthcheck:
   start_period: 90s      # grace period before failures count
 ```
 
-During the `start_period`, the check runs every `start_interval` (5s). After the first success or after `start_period` expires, it switches to `interval` (30s). This means a service that becomes ready in 10 seconds is detected in ~15 seconds instead of waiting up to 120 seconds.
+During the `start_period`, the check runs every `start_interval` (5s). After the first success or after `start_period` expires, it switches to `interval` (30s). A service that becomes ready in 10 seconds is detected in ~15 seconds instead of waiting up to 120 seconds.
 
-### Zaino — Port Check Instead of Process Check
+### Zaino: port check instead of process check
 
-Zaino's image (`debian:bookworm-slim`) doesn't include `curl` or `netcat`. The healthcheck uses bash's built-in TCP socket capability:
+Zaino's image (`debian:bookworm-slim`) does not include `curl` or `netcat`. The healthcheck uses bash's built-in TCP socket capability:
 
 ```yaml
 test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8137' 2>/dev/null || exit 1"]
@@ -171,15 +201,15 @@ test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/127.0.0.1/8137' 2>/dev/null || exi
 
 This verifies the gRPC port is actually accepting connections. The previous check (`zainod --version`) only confirmed the binary existed on disk; it would pass even if the service had crashed after startup.
 
-### Regtest Zebra — RPC Check Instead of `/ready`
+### Regtest Zebra: RPC check instead of `/ready`
 
 The base compose uses Zebra's `/ready` endpoint, which verifies the node is synced near the network tip. In regtest mode there are no peers and no network tip to sync to, so `/ready` would never succeed. The regtest overlay replaces this with a direct RPC call (`getblockchaininfo`) that confirms the RPC server is responding.
 
-### Development Override
+### Development override
 
 `docker-compose.override.yml.example` provides a ready-made override that switches Zebra's healthcheck from `/ready` to `/healthy`, allowing dependent services to start during sync. Copy it to `docker-compose.override.yml` (gitignored) for local development.
 
-## Security Hardening
+## Security hardening
 
 ### `cap_drop: [ALL]`
 
@@ -189,57 +219,69 @@ Linux containers receive ~14 capabilities by default (including `CHOWN`, `DAC_OV
 
 Prevents processes inside the container from gaining additional privileges through setuid binaries or capability inheritance. Even if an attacker writes a setuid binary into a writable tmpfs, it won't escalate privileges.
 
-### Log Rotation
+### Log rotation
 
-Without `max-size` and `max-file`, Docker's default `json-file` log driver grows logs unbounded. For a blockchain node running 24/7, this will eventually fill the disk. The `x-common` anchor configures 50MB per log file with 5 rotated files (250MB max per service).
+z3 does not pin a `logging:` driver on any service. A Compose `logging:` block overrides the driver the operator configured on the Docker daemon (journald, local, a remote collector), so forcing `json-file` would silently undo that choice. Bounding log growth is the daemon's job: set a rotating default once in `/etc/docker/daemon.json`, which applies to every container on the host.
 
-## Image Override Variables
-
-All service images are overridable via environment variables:
-
-```yaml
-image: ${ZEBRA_IMAGE:-zfnd/zebra:latest}
-image: ${ZAINO_IMAGE:-ghcr.io/zcashfoundation/zaino:sha-83e41d7}
-image: ${ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
-image: ${ZCASHD_IMAGE:-zodlinc/zcashd:v6.12.1}
+```json
+{
+  "log-driver": "local",
+  "log-opts": { "max-size": "50m", "max-file": "5" }
+}
 ```
 
-This allows operators to:
+The `local` driver rotates by default and is more efficient than `json-file`. Operators who want per-service control add a `logging:` block in their override file instead.
 
-- Pin to a specific version or digest for reproducibility
-- Test a pre-release candidate without editing the compose file
-- Use a private registry mirror in air-gapped environments
-- Run CI with custom-built images via shell variables
+## Image override variables
 
-## Environment Variable Strategy
+All service images are overridable. Compose references each image as `${Z3_<SERVICE>_IMAGE:-<default-tag>}`; the default tags are inline in `docker-compose.yml` itself and bump per upstream release. This allows operators to:
 
-### Explicit Mapping via `environment:`
+- Pin to a specific version or digest for reproducibility.
+- Test a pre-release candidate without editing the compose file.
+- Use a private registry mirror in air-gapped environments.
+- Run CI with custom-built images via shell variables.
 
-All services declare their environment variables explicitly in the `environment:` block. This prevents unintended leakage of variables between services. Zallet does not support environment variable configuration at all, so it only receives `RUST_LOG`.
+Tags are pinned, never floating (`:latest`). On a consensus-critical node platform a silent major bump on the next `pull` or recreate could fork the operator off the network, so upgrades are deliberate: bump the inline default in a reviewed change, set `Z3_<SERVICE>_IMAGE` to move a single service, or let Renovate (`renovate.json`) raise an auditable bump PR. Dependabot stays scoped to GitHub Actions because it cannot parse the `${VAR:-tag}` default form.
 
-### Zebra's `env_file` Exception
+The `Z3_*_IMAGE` prefix marks these as part of the public contract; `z3-contract.yaml` lists the env-var schema in full.
 
-Zebra is the only service that also uses `env_file: [{path: ./.env, required: false}]`. This exists because Zebra uses config-rs, which auto-reads any `ZEBRA_*` environment variable. Optional config-rs variables like `ZEBRA_METRICS__ENDPOINT_ADDR` and `ZEBRA_TRACING__OPENTELEMETRY_*` cannot be listed in the explicit `environment:` block with empty defaults, because config-rs treats empty strings as values and crashes when parsing `""` as a socket address or integer.
+## Environment variable strategy
 
-The `env_file` passthrough allows these optional variables to reach Zebra only when the user explicitly sets them in `.env`. When `.env` doesn't exist (the `required: false` case), Zebra receives only the explicit `environment:` variables and uses its built-in defaults for everything else.
+### Explicit mapping via `environment:`
 
-Non-ZEBRA variables (ZAINO_*, Z3_*, etc.) that leak through `env_file` are harmless because config-rs ignores variables that don't match its configured prefix.
+All services declare their environment variables explicitly in the `environment:` block. This prevents unintended variables from crossing service boundaries. Zallet does not support environment variable configuration at all, so it only receives `RUST_LOG`.
 
-## Regtest Overlay Constraints
+### Zebra's `env_file` exception
 
-### Zaino Authentication
+Zebra is the only service that also uses `env_file: [{path: ./.env, required: false}]`. Zebra uses config-rs, which auto-reads any `ZEBRA_*` environment variable. Optional config-rs variables like `ZEBRA_TRACING__OPENTELEMETRY_*` cannot be listed in the explicit `environment:` block with empty defaults, because config-rs treats empty strings as values and crashes when parsing `""` as a socket address. `ZEBRA_METRICS__ENDPOINT_ADDR` is the exception: z3 sets a non-empty default so the monitoring profile always has a Zebra scrape target.
 
-The base compose configures Zaino with cookie-based authentication (shared cookie volume with Zebra). Regtest disables cookie auth (`ENABLE_COOKIE_AUTH=false`), so the regtest overlay uses `environment: !override` on Zaino to replace the full environment block, removing the cookie path and all variables that are not needed in regtest.
+The `env_file` passthrough allows these optional variables to reach Zebra only when the operator explicitly sets them in `.env`. When `.env` does not exist, Zebra receives only the explicit `environment:` variables and uses its built-in defaults.
 
-Regtest instead uses username/password authentication configured in `config/regtest/zaino.toml`. These credentials cannot be set via environment variables because Zaino blocks sensitive keys (containing "password") in env vars for security reasons.
+Non-`ZEBRA_*` variables from `env_file` are ignored because config-rs reads only variables that match its configured prefix.
 
-### Config File vs Environment Variable Conflicts
+## Cookie-permissions sidecar
 
-Zaino uses config-rs, which merges values from both TOML config files and environment variables. If the same field is set in both places, config-rs panics with a "duplicate field" error. The regtest zaino config (`config/regtest/zaino.toml`) must only contain settings that are NOT set via environment variables. Currently it contains only `backend` and the auth credentials.
+Zebra writes the RPC cookie at `/var/run/auth/.cookie` with mode `0600` owned by uid 10001. Z3's consumer-attachment surface includes the cookie volume, so any service or downstream container that mounts it needs to read the cookie.
 
-### `docker compose run` and the `--config` Flag
+The base compose includes a small `cookie-permissions` sidecar (`alpine:3` with `cap_add: [FOWNER]`) that polls every 5 seconds and chmods the cookie to `0644` once it appears. The cookie volume is already the consumer attachment surface, so loosening the file mode within that volume does not change the security boundary; anyone with access to mount the volume already has access to the cookie.
 
-When using `docker compose run` to execute one-off commands (e.g., wallet initialization), the arguments replace the service's `command` from the compose file. This means the `--config /etc/zallet/zallet.toml` flag from the base service definition is not inherited. The init script must pass `--config` explicitly in every `compose run` invocation.
+Zaino and Zallet depend on the sidecar's healthcheck, so targeted starts such as `docker compose up -d zaino` also start the sidecar and wait until the cookie is readable. On mainnet and testnet the healthcheck waits for `/var/run/auth/.cookie`; on regtest it exits successfully because cookie auth is disabled and username/password auth is used instead.
+
+## Regtest overlay constraints
+
+### Zaino authentication
+
+The base compose configures Zaino with cookie-based authentication (shared cookie volume with Zebra). Regtest disables cookie auth (`ZEBRA_RPC__ENABLE_COOKIE_AUTH=false`), so the regtest overlay uses `environment: !override` on Zaino to replace the full environment block, removing the cookie path and other base vars.
+
+Regtest instead uses username/password authentication configured in `config/regtest/zaino.toml`. These credentials cannot be set via environment variables because Zaino blocks sensitive keys (containing "password") in env vars for security.
+
+### Config file vs environment variable conflicts
+
+Zaino's config-rs merges values from both TOML config files and environment variables. If the same field is set in both places, config-rs panics with a "duplicate field" error. The regtest Zaino config must contain only settings that are not set via environment variables. Currently it contains only `backend` and the auth credentials.
+
+### `docker compose run` and the `--config` flag
+
+When using `docker compose run` to execute one-off commands (for example, wallet initialization), the arguments replace the service's `command` from the compose file. The `--config /etc/zallet/zallet.toml` flag from the base service definition is not inherited. The init script must pass `--config` explicitly in every `compose run` invocation.
 
 ## `stop_grace_period`
 

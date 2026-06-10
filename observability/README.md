@@ -5,34 +5,42 @@ Metrics, alerting, and dashboards for the Z3 stack (Zebra, Zaino, Zallet).
 ## Quick Start
 
 ```bash
-# 1. Enable Zebra metrics in .env (uncomment this line):
-ZEBRA_METRICS__ENDPOINT_ADDR=0.0.0.0:9999
+# 1. Optional: enable Zebra trace export in .env
+ZEBRA_TRACING__OPENTELEMETRY_ENDPOINT=http://jaeger:4318
+ZEBRA_TRACING__OPENTELEMETRY_SERVICE_NAME=zebra-mainnet
+ZEBRA_TRACING__OPENTELEMETRY_SAMPLE_PERCENT=100
 
-# 2. Start the full stack with monitoring
-docker compose --profile monitoring up -d
+# 2. Start the full stack with monitoring.
+# Passing .env as a second env file also applies local port and image overrides.
+docker compose --env-file .env.mainnet --env-file .env --profile monitoring up -d
 
 # 3. View logs
-docker compose logs -f zebra
+docker compose --env-file .env.mainnet --env-file .env logs -f zebra
 ```
 
-> **Note**: OpenTelemetry tracing requires building Zebra with the `opentelemetry` feature.
-> The pre-built Docker image does not include it. See the [Tracing section](#tracing-jaeger) for build instructions.
+> **Note**: The monitoring profile starts Jaeger, but Zebra only exports spans
+> after `ZEBRA_TRACING__OPENTELEMETRY_ENDPOINT` is set. The pinned Zebra image
+> and the default local build use `default-release-binaries`, which includes
+> OpenTelemetry. If you override `Z3_ZEBRA_BUILD_FEATURES`, keep
+> `opentelemetry` in the feature list.
 
 ## Components
 
-| Component | Port | URL | Purpose |
-|-----------|------|-----|---------|
-| **Zebra** | 9999 | - | Zcash node with metrics and tracing |
-| **Prometheus** | 9094 | <http://localhost:9094> | Metrics collection and storage |
-| **Grafana** | 3000 | <http://localhost:3000> | Dashboards and visualization |
-| **Jaeger** | 16686 | <http://localhost:16686> | Distributed tracing UI |
-| **AlertManager** | 9093 | <http://localhost:9093> | Alert routing |
+| Component | Purpose |
+|-----------|---------|
+| **Zebra** | Zcash node with metrics and tracing (in-network scrape on `:9999`) |
+| **Prometheus** | Metrics collection and storage |
+| **Grafana** | Dashboards and visualization |
+| **Jaeger** | Distributed tracing UI |
+| **AlertManager** | Alert routing |
+
+Published host ports for these components are per-network and live in [`z3-contract.yaml`](../z3-contract.yaml) under `networks.<name>.ports` (the `monitoring` profile).
 
 Default Grafana credentials: `admin` / `admin` (you'll be prompted to change on first login)
 
 ## Architecture
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         Zebra Node                                  │
 │  ┌─────────────────┐              ┌─────────────────────────────┐   │
@@ -82,20 +90,31 @@ See [grafana/README.md](grafana/README.md) for dashboard details.
 
 ### Tracing (Jaeger)
 
-Distributed tracing via OpenTelemetry. Requires building Zebra with the `opentelemetry` feature (not included in the pre-built image):
+Distributed tracing uses Zebra's OpenTelemetry exporter and the Jaeger collector
+from the `monitoring` profile. Jaeger can run without Zebra traces; Zebra begins
+exporting spans only after the OTLP endpoint is configured.
 
-```bash
-# Build Zebra with OpenTelemetry support
-docker compose build --build-arg FEATURES="default-release-binaries opentelemetry" zebra
-```
-
-Then enable tracing in `.env`:
+Enable tracing in `.env`:
 
 ```bash
 ZEBRA_TRACING__OPENTELEMETRY_ENDPOINT=http://jaeger:4318
-ZEBRA_TRACING__OPENTELEMETRY_SERVICE_NAME=zebra
+ZEBRA_TRACING__OPENTELEMETRY_SERVICE_NAME=zebra-mainnet
 ZEBRA_TRACING__OPENTELEMETRY_SAMPLE_PERCENT=100
 ```
+
+Then recreate Zebra with the local env file loaded:
+
+```bash
+docker compose --env-file .env.mainnet --env-file .env --profile monitoring up -d --force-recreate zebra
+```
+
+`ZEBRA_TRACING__OPENTELEMETRY_*` values reach the Zebra container through its
+service-level `env_file`. `Z3_*` values such as `Z3_ZEBRA_IMAGE` and
+`Z3_JAEGER_OTLP_HTTP_PORT` are Compose interpolation inputs, so they need to be
+exported in the shell or loaded with `--env-file .env`.
+
+If you build a custom Zebra image with `Z3_ZEBRA_BUILD_FEATURES`, include
+`opentelemetry` or use `default-release-binaries`.
 
 Jaeger provides:
 
@@ -127,22 +146,28 @@ Add this to your `.env` file to enable Zebra metrics:
 
 ### Port Customization
 
-Override default ports in `.env`:
+Override default monitoring host ports via the `Z3_*` env vars in your env file or `.env`:
 
 ```bash
-GRAFANA_PORT=3000
-PROMETHEUS_PORT=9094
-JAEGER_UI_PORT=16686
-ALERTMANAGER_PORT=9093
+Z3_GRAFANA_PORT=3000
+Z3_PROMETHEUS_PORT=9094
+Z3_JAEGER_UI_PORT=16686
+Z3_ALERTMANAGER_PORT=9093
 ```
+
+See [`z3-contract.yaml`](../z3-contract.yaml) for the full env-var schema.
 
 ## Common Tasks
 
 ### View Zebra's current metrics
 
 ```bash
-curl -s http://localhost:9999/metrics | grep zcash
+docker compose --env-file .env.mainnet exec zebra \
+  curl -sf http://127.0.0.1:9999/metrics | grep zcash
 ```
+
+Zebra's metrics port is intentionally in-network only; Prometheus scrapes it on
+the Compose network.
 
 ### Query Prometheus directly
 
@@ -156,9 +181,16 @@ curl -s 'http://localhost:9094/api/v1/query?query=zcash_state_tip_height'
 ### No metrics in Grafana
 
 1. Verify `ZEBRA_METRICS__ENDPOINT_ADDR=0.0.0.0:9999` is set in `.env`
-2. Restart Zebra: `docker compose restart zebra`
-3. Check Zebra is exposing metrics: `docker compose exec zebra wget -qO- http://localhost:9999/metrics | head`
+2. Restart Zebra: `docker compose --env-file .env.mainnet --env-file .env restart zebra`
+3. Check Zebra is exposing metrics: `docker compose --env-file .env.mainnet exec zebra curl -sf http://127.0.0.1:9999/metrics | head`
 4. Check Prometheus targets: <http://localhost:9094/targets>
+
+### No traces in Jaeger
+
+1. Verify Zebra has the OTLP env vars: `docker inspect z3-mainnet-zebra-1 --format '{{range .Config.Env}}{{println .}}{{end}}' | grep ZEBRA_TRACING__OPENTELEMETRY`
+2. Check Zebra installed the tracing layer: `docker logs z3-mainnet-zebra-1 | grep 'installed OpenTelemetry tracing layer'`
+3. Check Jaeger has the Zebra service: `curl -s http://127.0.0.1:16686/api/services`
+4. Check Prometheus has span metrics: `curl -sG http://127.0.0.1:9094/api/v1/query --data-urlencode 'query=traces_span_metrics_calls_total{service_name="zebra-mainnet"}'`
 
 ## Running Without Monitoring
 

@@ -19,21 +19,22 @@ target/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# =============================================================================
-# Config directory — track .default templates, ignore live copies and secrets
+# Config directory: tracked defaults live in .example files; active config,
+# identity files, and TLS keys are local and gitignored.
 # =============================================================================
 config/**
 !config/.gitkeep
-!config/zallet.toml.default
-!config/zaino.toml
-# TLS directory structure (certs are generated locally)
-!config/tls/
-config/tls/*
-!config/tls/.gitkeep
-# Regtest configs
+# Per-network: track only .example templates; live .toml files are local
+!config/mainnet/
+!config/mainnet/zaino.toml.example
+!config/mainnet/zallet.toml.example
+!config/testnet/
+!config/testnet/zaino.toml.example
+!config/testnet/zallet.toml.example
 !config/regtest/
-!config/regtest/zaino.toml
-!config/regtest/zallet.toml.default
+!config/regtest/zaino.toml.example
+!config/regtest/zallet.toml.example
+!config/regtest/zebra.toml.example
 
 # Runtime environment overrides (see .env.example for available variables)
 .env
@@ -41,5 +42,13 @@ config/tls/*
 # Local comparator state
 .tmp/
 
-# Ignore docker compose overrides
+# Mainnet auto-loads docker-compose.override.yml when present (Compose's native
+# behavior; absent is not an error). Per-network overrides are opt-in via -f or
+# COMPOSE_FILE, so they are gitignored too if an operator creates one.
 docker-compose.override.yml
+docker-compose.testnet.override.yml
+docker-compose.regtest.override.yml
+
+# Python bytecode caches (from scripts/validate-contract*.py)
+__pycache__/
+*.pyc

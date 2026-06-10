@@ -1,0 +1,49 @@
+# Zallet configuration: Mainnet.
+#
+# Zallet embeds Zaino's indexer libraries and connects directly to Zebra's
+# JSON-RPC endpoint. It does NOT use the standalone Zaino service (which
+# serves gRPC to external light-wallet clients).
+#
+# For full configuration options: `zallet example-config`.
+
+[builder]
+# Transaction builder: defaults.
+
+[builder.limits]
+# Transaction limits: defaults.
+
+[consensus]
+network = "main"
+
+[database]
+# Wallet database at <datadir>/wallet.db.
+
+[external]
+# External settings: defaults.
+
+[features]
+as_of_version = "0.1.0-alpha.3"
+
+[features.deprecated]
+
+[features.experimental]
+
+[indexer]
+# Mainnet Zebra RPC port: 8232 (Zebra's canonical mainnet port). The service
+# DNS name `zebra` resolves on the z3-mainnet network.
+validator_address = "zebra:8232"
+validator_cookie_path = "/var/run/auth/.cookie"
+
+[keystore]
+# Age encryption identity file, mounted by docker-compose from
+# ${Z3_CONFIG_DIR}/zallet_identity.txt.
+encryption_identity = "/etc/zallet/identity.txt"
+
+[note_management]
+# Note management: defaults.
+
+[rpc]
+# Zallet RPC listen address inside the container.
+# Default port 28232; for a different host port set Z3_ZALLET_HOST_RPC_PORT.
+bind = ["0.0.0.0:28232"]
+timeout = 30

@@ -1,0 +1,25 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "github-actions": {
+    "enabled": false
+  },
+  "packageRules": [
+    {
+      "description": "Image pins are deliberate; raise PRs but never auto-merge a node-platform image bump.",
+      "matchManagers": ["docker-compose", "custom.regex"],
+      "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Bump the ${VAR:-repo:tag} image-pin defaults in the compose files.",
+      "managerFilePatterns": ["/(^|/)docker-compose[^/]*\\.ya?ml$/"],
+      "matchStrings": [
+        "\\$\\{[A-Z0-9_]+:-(?<depName>[^:}\\s]+):(?<currentValue>[^}\\s]+)\\}"
+      ],
+      "datasourceTemplate": "docker"
+    }
+  ]
+}
