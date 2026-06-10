@@ -1,122 +1,148 @@
 # Z3: a Zcash node platform
 
-Z3 runs **Zebra** (full node), **Zaino** (indexer), and **Zallet** (wallet) with Docker Compose. Downstream services can attach through the documented network, ports, and authentication surfaces.
+Z3 runs **Zebra** (full node), **Zaino** (indexer), and **Zallet** (wallet) together with Docker Compose, on mainnet, testnet, or a local regtest network.
+
+Two kinds of people use Z3, and this README is split for them:
+
+- **Operators** run the stack as infrastructure. Start at [Choose your network](#choose-your-network); everything you need to run Z3 is in that half.
+- **Developers, testers, and researchers** build or test against Z3, often running several networks at once. Start at [Building and testing against Z3](#building-and-testing-against-z3).
 
 ## Prerequisites
 
 - [Docker Engine](https://docs.docker.com/engine/install/) with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
 - [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys (`brew install rage` on macOS, or download a release)
-- `openssl` for generating the Zaino TLS certificate (pre-installed on macOS and most Linux distros)
-- Git for cloning the repository
+- Git, to clone this repository
+- `openssl`, only for regtest (it hashes the regtest wallet RPC password); pre-installed on macOS and most Linux distros
 
-> [!TIP]
-> **Want to verify the stack works before committing to mainnet?** Skip to [Running regtest](#running-regtest). It boots in seconds, mines blocks on demand, and exercises the same services. Operators who confirm regtest works rarely hit setup issues on mainnet.
+## For operators
 
-## Quick start
+### Choose your network
 
-Z3 runs as one of three Compose projects: `z3-mainnet`, `z3-testnet`, `z3-regtest`. The instructions below walk through mainnet; for the other networks see [Networks](#networks).
+Z3 runs as one of three independent Compose projects. Pick by what you are doing:
 
-Zebra has to sync the entire chain before Zaino and Zallet can serve clients. Expect **24-72 hours** on a fresh mainnet install (2-12 hours on testnet, instant on regtest). The two-phase flow below starts Zebra alone, waits for the sync, then brings up the rest.
+| Network | Use it for | First sync | Real funds |
+|---------|-----------|------------|------------|
+| **mainnet** | Production: the real Zcash chain | 24-72 hours | Yes |
+| **testnet** | Staging against the public test network | 2-12 hours | No (test ZEC) |
+| **regtest** | Local practice and development: instant blocks, no peers, no sync | Seconds | No |
+
+All three can run at once on one host; each gets its own ports and volumes. New to Z3? Start with **regtest** to watch the whole stack come up in seconds, then move to mainnet.
+
+### Quick start
+
+Each network has a one-time setup step and a start step.
+
+**Mainnet (production).** Zebra must sync the whole chain before Zaino and Zallet can serve clients, so the boot is two-phase: start Zebra, wait for the sync, then start the rest.
 
 ```bash
 git clone https://github.com/ZcashFoundation/z3 && cd z3
 
-# 1. First-run setup. Idempotent: creates local config files, generates the
-#    Zallet identity, and generates the shared TLS cert.
+# 1. One-time setup: creates local config files and the Zallet wallet identity.
 ./scripts/setup-network.sh mainnet
 
-# 2. Start Zebra alone.
+# 2. Start Zebra and wait for it to sync. The poller exits when Zebra is ready.
 docker compose --env-file .env.mainnet up -d zebra
-
-# 3. Wait for sync. The helper polls /ready every 30s and prints progress.
 ./scripts/check-zebra-readiness.sh
 
-# 4. Bring up Zaino + Zallet now that Zebra is synced.
+# 3. Start Zaino + Zallet once Zebra is synced.
 docker compose --env-file .env.mainnet up -d
 ```
 
-Pre-built images for all three services are pulled automatically. No build step or submodule init needed.
-
-> [!NOTE]
-> The per-network config files at `config/<network>/zallet.toml` and `config/<network>/zaino.toml` are local and gitignored. `setup-network.sh` copies them from tracked `.example` templates on first run, so edits to your live `.toml` files never conflict with repository updates. After pulling a new version, diff your copy against the template:
->
-> ```bash
-> diff config/mainnet/zallet.toml config/mainnet/zallet.toml.example
-> ```
+Images are pulled automatically; no build step or submodule init is needed.
 
 > [!IMPORTANT]
-> Step 3 is not optional. Running `up -d` before Zebra reaches `/ready` causes Zaino and Zallet to restart in a loop until the sync catches up. The poller exits 0 only when Zebra is synced.
+> Running step 3 before Zebra reaches `/ready` makes Zaino and Zallet restart-loop until the sync catches up. The poller in step 2 exits only when Zebra is synced.
 
-> [!TIP]
-> **Apple Silicon:** Zebra runs natively on arm64. Zaino and Zallet are pinned to amd64 and run under emulation by default (their workload is light); to build them native arm64 instead, see [Platform configuration (ARM64)](#platform-configuration-arm64). The optional zcashd profile is amd64-only. See [docs/faq.md](docs/faq.md) for other behaviors that look like bugs but aren't.
+Your edits to the per-network config under `config/<network>/` stay local and survive `git pull`.
 
-## Networks
-
-Z3 ships three networks. Pick by use case; each runs as a separate Compose project with isolated volumes and host ports, so mainnet and testnet can run concurrently on the same host without collisions.
-
-| Network | Use case | Initial sync |
-|---------|----------|--------------|
-| **Mainnet** | Production: real Zcash blockchain, real funds | 24-72 hours |
-| **Testnet** | Integration testing against the public test network | 2-12 hours |
-| **Regtest** | Local development: instant blocks, no peers, no sync wait | Seconds |
-
-Each network has its own setup command and bring-up sequence below. Don't `docker compose up` until you've run the matching setup step, otherwise the bind mounts fail because the live config files have not been created yet.
-
-### Running testnet
+**Testnet (public test network).** The same two-phase flow; pass the testnet health port to the poller:
 
 ```bash
 ./scripts/setup-network.sh testnet
 docker compose --env-file .env.testnet up -d zebra
-
-# Wait for sync. Pass the testnet health port to the poller.
 ./scripts/check-zebra-readiness.sh 18080
-
 docker compose --env-file .env.testnet up -d
 ```
 
-### Running regtest
-
-Regtest uses an overlay (`docker-compose.regtest.yml`) that adds the rpc-router service, switches from cookie auth to username/password, and adjusts healthchecks for a peerless network.
+**Regtest (local practice and development).** Regtest mines blocks on demand with no peers, so it boots in seconds. One command does setup, starts Zebra, and mines the activation blocks:
 
 ```bash
-# One-shot init: file setup + identity + TLS + boots Zebra + mines 2 blocks.
-# Idempotent; subsequent runs skip steps already done.
 ./scripts/regtest-init.sh
-
 docker compose --env-file .env.regtest up -d
 ```
 
-After the first init, just the `up -d` line is enough on subsequent boots.
+After the first run, the `up -d` line alone is enough. See [docs/regtest.md](docs/regtest.md) for test commands and the full workflow.
 
-See [docs/regtest.md](docs/regtest.md) for test commands (curl, grpcurl) and the full workflow reference.
+### Where your data lives
+
+Each network keeps its chain state in a Docker named volume called `z3-<network>-chain`, which lands under Docker's data root (on Linux, `/var/lib/docker/volumes/`). Mainnet is roughly **300 GB**; size the disk before you start.
+
+- **Find the path:** `docker volume inspect z3-mainnet-chain -f '{{.Mountpoint}}'`
+- **Put it on another disk:** set `Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state` and run `./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state` before the first start.
+- **Back up the wallet:** the only data worth backing up is the wallet, and it needs **two** pieces kept together: the `z3-<network>-zallet` volume **and** `config/<network>/zallet_identity.txt` (the age key the wallet database is encrypted with). One without the other cannot be restored. Chain state is re-syncable and the cookie is regenerated, so neither needs backup.
+- **Stop vs wipe:** `docker compose --env-file .env.<network> down` stops the stack and keeps every volume; adding `-v` (`down -v`) deletes them, which means a full re-sync.
+
+The volume table and bind-mount details are in the [Reference](#reference) section.
+
+### Running in production
+
+Z3 ships production-shaped defaults, but a few choices are yours to make before running mainnet for real:
+
+- **Pick where the chain lives.** The default named volume sits under `/var/lib/docker` (~300 GB on mainnet). To use a dedicated disk, set `Z3_CHAIN_DATA_PATH` and run `fix-permissions.sh` before the first start (see [Where your data lives](#where-your-data-lives)).
+- **Plan the wallet backup.** Keep the `z3-<network>-zallet` volume and `config/<network>/zallet_identity.txt` together; nothing else needs backup.
+- **Set a log rotation policy.** Z3 does not pin a logging driver, so containers use your Docker daemon default. Add size limits in `/etc/docker/daemon.json` (see the [FAQ](docs/faq.md)); otherwise logs grow unbounded on a 24/7 node.
+- **Decide p2p exposure.** Mainnet and testnet publish Zebra's p2p port for inbound peers. Behind NAT or a firewall, set `ZEBRA_NETWORK__EXTERNAL_ADDR` to the address peers should dial. Regtest is peerless and publishes no p2p.
+- **Bound resources on a shared host.** No CPU or memory limits are set by default: right for a dedicated node, easy to get wrong on a shared box. Add `deploy.resources.limits` in an override file if you need them.
+
+Z3 ships safe defaults: pinned image versions (no surprise upgrades), non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Upgrades stay deliberate: bump the version pin in a reviewed change, or set `Z3_<SERVICE>_IMAGE`.
+
+### Monitoring
+
+Prometheus, Grafana, Jaeger, and AlertManager ship behind a Compose profile. Zebra's metrics are on by default at the in-network `zebra:9999` scrape target.
+
+```bash
+docker compose --env-file .env.<network> --profile monitoring up -d
+```
+
+Default UI host ports are globally unique across the three networks (mainnet Grafana `3000`, testnet `13000`, regtest `23000`, and so on). Each is overridable: `Z3_GRAFANA_PORT`, `Z3_PROMETHEUS_PORT`, `Z3_ALERTMANAGER_PORT`, `Z3_JAEGER_UI_PORT`.
 
 ### Optional zcashd comparator
 
-`zcashd` is available behind an opt-in Compose profile for local comparison tests. It is not part of the default stack, uses a separate data volume, and starts with public P2P disabled. All three networks support it:
+`zcashd` is available behind an opt-in profile for local comparison against the legacy node. It is not part of the default stack, uses its own volume, and starts with public P2P disabled:
 
 ```bash
-docker compose --env-file .env.mainnet --profile zcashd up -d zcashd
-docker compose --env-file .env.testnet --profile zcashd up -d zcashd
-docker compose --env-file .env.regtest --profile zcashd up -d zcashd
+docker compose --env-file .env.<network> --profile zcashd up -d zcashd
 ```
 
-Default image pin is the `${Z3_ZCASHD_IMAGE:-...}` fallback in `docker-compose.yml`. Default RPC credentials: `zebra` / `zebra`; override with `ZCASHD_RPCUSER` and `ZCASHD_RPCPASSWORD`. Container RPC stays on `38232`; host ports are `60232` (mainnet), `61232` (testnet), and `62232` (regtest).
+Default RPC credentials are `zebra` / `zebra` (override with `ZCASHD_RPCUSER` / `ZCASHD_RPCPASSWORD`). zcashd is amd64-only and runs under emulation on arm64.
 
-### Monitoring stack
-
-Prometheus, Grafana, Jaeger, and AlertManager are available behind a Compose profile. Zebra's Prometheus endpoint is enabled by default on the internal `zebra:9999` scrape target.
-
-Then start with the profile:
+### Stopping the stack
 
 ```bash
-docker compose --env-file .env.mainnet --profile monitoring up -d
-docker compose --env-file .env.testnet --profile monitoring up -d
-docker compose --env-file .env.regtest --profile monitoring up -d
+docker compose --env-file .env.mainnet down       # stop containers, keep data
+docker compose --env-file .env.mainnet down -v    # stop and delete all volumes (full reset)
 ```
 
-Default monitoring host ports are globally unique across the three Z3 networks; the full per-network matrix lives in [`z3-contract.yaml`](z3-contract.yaml) under `networks.<name>.ports`. Each pin is overridable: `Z3_GRAFANA_PORT`, `Z3_PROMETHEUS_PORT`, `Z3_ALERTMANAGER_PORT`, `Z3_JAEGER_UI_PORT`, `Z3_JAEGER_OTLP_GRPC_PORT`, `Z3_JAEGER_OTLP_HTTP_PORT`, `Z3_JAEGER_SPANMETRICS_PORT`.
+## Building and testing against Z3
 
-## Architecture
+You do not need this section to operate Z3. It covers running several networks for test scenarios, how the networks differ, the published service endpoints, and attaching your own services.
+
+### How the networks differ
+
+Operators usually run one network; testers often run several and need to know where they diverge from a deployment standpoint:
+
+| Aspect | mainnet | testnet | regtest |
+|--------|---------|---------|---------|
+| Peers / p2p | Real peers; p2p published (`8233`) | Test peers; p2p published (`18233`) | Peerless; no p2p |
+| Blocks | From the network | From the network | Mined on demand (`generate`) |
+| Sync wait before use | Hours to days | Hours | None |
+| RPC auth | Cookie file | Cookie file | Username / password |
+| In-network Zebra RPC | `zebra:8232` | `zebra:18232` | `zebra:18232` |
+| Coexists on one host with | testnet, regtest | mainnet, regtest | mainnet, testnet |
+
+Mainnet pairs cleanly with either other network on one host. Testnet and regtest reuse Zebra's testnet container ports, so they differ only by published host port (the env files keep those unique). The rpc-router, a unified Zebra+Zallet JSON-RPC endpoint, runs only on regtest today.
+
+### Architecture
 
 ```mermaid
 graph LR
@@ -136,33 +162,29 @@ graph LR
 
 **Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service.
 
-Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin at runtime with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, `Z3_ZALLET_IMAGE`, or `Z3_ZCASHD_IMAGE`. Per-image platform support is declared in [`z3-contract.yaml`](z3-contract.yaml) under `image_platforms:`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet), [zcashd](https://github.com/zcash/zcash).
+Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, `Z3_ZALLET_IMAGE`, or `Z3_ZCASHD_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet), [zcashd](https://github.com/zcash/zcash).
 
-## Service endpoints
+### Service endpoints
 
-Published host ports are chosen per `.env.<network>` so all Z3 networks can coexist on one host. The full per-network matrix lives in [`z3-contract.yaml`](z3-contract.yaml) under `networks.<name>.ports`.
+Published host ports are chosen per `.env.<network>` so all networks coexist on one host. The full per-network matrix lives in [`z3-contract.yaml`](z3-contract.yaml).
 
 | Service | Endpoint shape | Env var |
 |---------|----------------|---------|
 | Zebra RPC | `http://localhost:<port>` | `Z3_ZEBRA_HOST_RPC_PORT` |
+| Zebra p2p (inbound peers) | `localhost:<port>` | `Z3_ZEBRA_HOST_P2P_PORT` |
 | Zebra health | `http://localhost:<port>/ready` | `Z3_ZEBRA_HOST_HEALTH_PORT` |
-| Zebra indexer | `localhost:<port>` | `Z3_ZEBRA_HOST_INDEXER_PORT` |
-| Zaino gRPC (TLS) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
+| Zaino gRPC (plaintext, no TLS) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
 | Zaino JSON-RPC | `http://localhost:<port>` | `Z3_ZAINO_HOST_JSON_RPC_PORT` |
 | Zallet RPC | `http://localhost:<port>` | `Z3_ZALLET_HOST_RPC_PORT` |
 | zcashd RPC (profile zcashd) | `http://localhost:<port>` | `Z3_ZCASHD_HOST_RPC_PORT` |
 
-Container ports inside the network follow Zebra's per-network defaults (mainnet uses Zebra's mainnet ports; testnet and regtest use Zebra's testnet ports). Service DNS names inside the network are `zebra`, `zaino`, `zallet`.
+Inside the network, services resolve by DNS name (`zebra`, `zaino`, `zallet`) on Zebra's per-network container ports.
 
-## Public contract for downstream services
+### Attaching your own services
 
-Downstream services attach to a running Z3 stack via a stable, declared contract. The network names and cookie-auth surfaces are explicit (not subject to Compose's project-prefix behavior).
+> Operators can skip this. It exists for downstream services, wallets, and tooling that attach to a running Z3 stack, and for agents that consume the API programmatically.
 
-Identifiers follow the pattern `z3-<network>-<suffix>`. The Compose project name and the external Docker network name are both `z3-<network>` (e.g., `z3-mainnet`). Volumes are `z3-<network>-<suffix>` where the suffix is `chain`, `cookie`, `zaino`, `zallet`, or `zcashd` (profile-gated). The cookie file path inside containers that use cookie auth is `/var/run/auth/.cookie`.
-
-RPC auth differs by network: cookie file (mainnet, testnet) or username/password (regtest). Consumers on regtest should not mount `z3-regtest-cookie` expecting a readable cookie; Zebra does not write one there. The full identifier inventory lives in [`z3-contract.yaml`](z3-contract.yaml).
-
-A mainnet or testnet consumer compose file attaches with:
+Z3 publishes a stable set of identifiers (network names, volume names, ports, and auth surfaces) so your service can attach by name and keep working across networks. A mainnet or testnet peer attaches over the external network and reads the RPC cookie from the shared volume:
 
 ```yaml
 networks:
@@ -183,18 +205,7 @@ services:
       ZEBRA_COOKIE_PATH: /var/run/auth/.cookie
 ```
 
-Regtest disables Zebra cookie auth and uses username/password credentials through the regtest configs and rpc-router. Do not mount `z3-regtest-cookie` expecting a readable `.cookie` file.
-
-See `docs/contract.md` for the full contract and `docs/integrations/` for integration examples.
-
-## Stopping the stack
-
-```bash
-docker compose --env-file .env.mainnet down       # stop containers, keep data
-docker compose --env-file .env.mainnet down -v    # stop and delete all volumes (full reset)
-```
-
----
+Regtest uses username/password instead of cookie auth; do not mount `z3-regtest-cookie` expecting a readable cookie. For the three attachment patterns (Compose peer, host-side pointer, lightwalletd client), see [docs/integrations/](docs/integrations/). For the full identifier inventory and stability promise, see [docs/contract.md](docs/contract.md) and [`z3-contract.yaml`](z3-contract.yaml).
 
 ## Reference
 
@@ -245,9 +256,8 @@ docker compose --env-file .env.mainnet build
 - Copies `config/<network>/zallet.toml.example` -> `config/<network>/zallet.toml` (local, gitignored)
 - Copies `config/<network>/zaino.toml.example` → `config/<network>/zaino.toml` (same)
 - Generates `config/<network>/zallet_identity.txt` via `rage-keygen` if missing
-- Generates `config/tls/zaino.{crt,key}` (self-signed, 1 year) if missing
 
-Subsequent runs print which steps were skipped. Back up `zallet_identity.txt` and the public keys it printed. For production TLS, replace the self-signed cert with one from a trusted CA after the script runs.
+Subsequent runs print which steps were skipped. Back up `zallet_identity.txt` together with the `z3-<network>-zallet` volume; without the identity file the wallet database cannot be decrypted.
 
 ### Per-network Zallet config
 
@@ -296,7 +306,7 @@ Two namespaces keep stack-level settings separate from service-native settings:
 | Namespace | Scope | Examples |
 |-----------|-------|----------|
 | `Z3_*` | Stack-level settings: port matrix, image pins, volume paths, per-service log split, monitoring port matrix | `Z3_NETWORK`, `Z3_ZEBRA_HOST_RPC_PORT`, `Z3_ZEBRA_IMAGE`, `Z3_ZEBRA_RUST_LOG` |
-| `ZCASHD_*` | zcashd image entrypoint convention; passed through unchanged | `ZCASHD_RPCUSER`, `ZCASHD_RPCPASSWORD`, `ZCASHD_*_ACTIVATION_HEIGHT` |
+| `ZCASHD_*` | zcashd image entrypoint convention; passed through unchanged | `ZCASHD_RPCUSER`, `ZCASHD_RPCPASSWORD`, `ZCASHD_RPC_ALLOWIP` |
 | `ZEBRA_*` / `ZAINO_*` | Service-native config-rs vars (double-underscore is config-rs nesting) | `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` |
 | `DOCKER_PLATFORM`, `COMPOSE_*`, `RUST_LOG` | Ecosystem / shell standards | `DOCKER_PLATFORM=linux/arm64` |
 
@@ -426,6 +436,8 @@ ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS=true
 
 ## Further reading
 
-- [docs/docker-architecture.md](docs/docker-architecture.md): Compose patterns, overlay merge rules, security hardening rationale
-- [docs/regtest.md](docs/regtest.md): regtest environment setup and test commands
-- [.env.example](.env.example): every public environment variable with its default
+- **Operators:** [docs/faq.md](docs/faq.md) (the "For operators" section)
+- **Developers and testers:** [docs/faq.md](docs/faq.md) (the "For developers and testers" section), [docs/regtest.md](docs/regtest.md), [docs/integrations/](docs/integrations/)
+- **Integrators and agents:** [docs/contract.md](docs/contract.md), [`z3-contract.yaml`](z3-contract.yaml)
+- **Internals:** [docs/docker-architecture.md](docs/docker-architecture.md): Compose patterns, overlay merge rules, security hardening rationale
+- **Every env var:** [.env.example](.env.example)

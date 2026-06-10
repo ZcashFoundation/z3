@@ -14,18 +14,17 @@
 # documented network and cookie volume; see docs/integrations/.
 #
 # Shared defaults applied to every service via <<: *common:
-#   logging      rotates 50MB x 5 files to bound disk growth
 #   cap_drop     removes all Linux capabilities (services run as non-root)
 #   security_opt prevents privilege escalation via setuid binaries
+#
+# Logging is deliberately not set here. Pinning a driver in Compose overrides
+# the operator's Docker daemon default (journald, local, a remote collector).
+# To bound log growth, set a rotating default in /etc/docker/daemon.json; see
+# docs/faq.md ("Why doesn't z3 set a logging driver").
 
 name: z3-mainnet
 
 x-common: &common
-  logging:
-    driver: json-file
-    options:
-      max-size: "50m"
-      max-file: "5"
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
 
@@ -57,7 +56,6 @@ services:
       RUST_LOG: ${Z3_ZEBRA_RUST_LOG:-${RUST_LOG:-info}}
       ZEBRA_NETWORK__NETWORK: ${Z3_NETWORK:-Mainnet}
       ZEBRA_RPC__LISTEN_ADDR: 0.0.0.0:${Z3_ZEBRA_RPC_PORT:-8232}
-      ZEBRA_RPC__INDEXER_LISTEN_ADDR: 0.0.0.0:${Z3_ZEBRA_INDEXER_PORT:-8230}
       ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}
       ZEBRA_RPC__COOKIE_DIR: /var/run/auth
       ZEBRA_TRACING__FILTER: ${ZEBRA_TRACING__FILTER:-info}
@@ -70,10 +68,14 @@ services:
     volumes:
       - ${Z3_CHAIN_DATA_PATH:-chain}:/home/zebra/.cache/zebra
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth
+    # p2p (8233 mainnet / 18233 testnet) is published so the node accepts
+    # inbound peer connections; without it Zebra makes only outbound peers.
+    # Behind NAT or a firewall, also set ZEBRA_NETWORK__EXTERNAL_ADDR to the
+    # address peers should dial. Regtest is peerless and omits this (see overlay).
     ports:
       - "${Z3_ZEBRA_HOST_RPC_PORT:-8232}:${Z3_ZEBRA_RPC_PORT:-8232}"
+      - "${Z3_ZEBRA_HOST_P2P_PORT:-8233}:${Z3_ZEBRA_P2P_PORT:-8233}"
       - "${Z3_ZEBRA_HOST_HEALTH_PORT:-8080}:8080"
-      - "${Z3_ZEBRA_HOST_INDEXER_PORT:-8230}:${Z3_ZEBRA_INDEXER_PORT:-8230}"
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8080/ready || exit 1"]
       interval: 30s
@@ -116,13 +118,19 @@ services:
       start_period: 5s
 
   zaino:
-    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.4.0-rc.2}
+    # The -no-tls tag compiles out Zaino's "TLS required on a non-private bind"
+    # guard, so intra-container gRPC on 0.0.0.0:8137 runs as plaintext h2c.
+    # NO_TLS=true below makes a local arm64 build match that pin. Terminate
+    # edge TLS at a reverse proxy if Zaino is exposed beyond the host.
+    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.4.0-rc.2-no-tls}
     # Zaino publishes linux/amd64 only; arm64 hosts run under emulation
     # unless the operator builds from the ./zaino submodule.
     platform: ${DOCKER_PLATFORM:-linux/amd64}
     build:
       context: ./zaino
       dockerfile: Dockerfile
+      args:
+        NO_TLS: "true"
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
@@ -141,17 +149,10 @@ services:
       ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH: /var/run/auth/.cookie
       ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:8137
       ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:8237
-      ZAINO_GRPC_SETTINGS__TLS__CERT_PATH: ${ZAINO_GRPC_SETTINGS__TLS__CERT_PATH:-/var/run/zaino/tls/zaino.crt}
-      ZAINO_GRPC_SETTINGS__TLS__KEY_PATH: ${ZAINO_GRPC_SETTINGS__TLS__KEY_PATH:-/var/run/zaino/tls/zaino.key}
     volumes:
       - ${Z3_ZAINO_DATA_PATH:-zaino}:/app/data
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
       - ${Z3_CONFIG_DIR:-./config/mainnet}/zaino.toml:/etc/zaino/zindexer.toml:ro
-    configs:
-      - source: zaino_tls_cert
-        target: ${ZAINO_GRPC_SETTINGS__TLS__CERT_PATH:-/var/run/zaino/tls/zaino.crt}
-      - source: zaino_tls_key
-        target: ${ZAINO_GRPC_SETTINGS__TLS__KEY_PATH:-/var/run/zaino/tls/zaino.key}
     ports:
       - "${Z3_ZAINO_HOST_GRPC_PORT:-8137}:8137"
       - "${Z3_ZAINO_HOST_JSON_RPC_PORT:-8237}:8237"
@@ -364,9 +365,5 @@ networks:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}
 
 configs:
-  zaino_tls_cert:
-    file: ./config/tls/zaino.crt
-  zaino_tls_key:
-    file: ./config/tls/zaino.key
   prometheus_config:
     file: ./observability/prometheus/prometheus.yaml

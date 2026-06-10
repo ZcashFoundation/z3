@@ -8,7 +8,6 @@ Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and
 
 - Docker with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
 - [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys
-- TLS certificates generated (see Quick Start in the main [README](../README.md))
 - For gRPC testing: [grpcurl](https://github.com/fullstorydev/grpcurl) and the zaino submodule initialized (`git submodule update --init zaino`)
 
 ## First-time setup
@@ -50,7 +49,7 @@ Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source
 | Service | Endpoint | Description |
 |---------|----------|-------------|
 | rpc-router | http://localhost:8181 | JSON-RPC router (Zebra + Zallet) |
-| Zaino gRPC | https://localhost:28137 | lightwalletd-compatible gRPC (TLS) |
+| Zaino gRPC | localhost:28137 | lightwalletd-compatible gRPC (plaintext h2c) |
 | Zebra RPC | http://localhost:29232 | Direct Zebra JSON-RPC |
 | Zallet RPC | http://localhost:50232 | Direct Zallet JSON-RPC |
 | zcashd RPC | http://localhost:62232 | Optional zcashd comparator (`--profile zcashd`) |
@@ -63,17 +62,9 @@ For local compatibility checks against zcashd, start the profiled zcashd service
 docker compose --env-file .env.regtest --profile zcashd up -d zcashd
 ```
 
-The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and, by default, the same NU activation heights used by Zallet. It uses a separate Docker volume (`z3-regtest-zcashd`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
+The regtest overlay starts zcashd with public P2P disabled (`-listen=0 -connect=0`) and fixed NU activation heights that match the stack's regtest config (NU5 at height 2, earlier upgrades at height 1). It uses a separate Docker volume (`z3-regtest-zcashd`) and default RPC credentials `zebra` / `zebra`. See the [README platform section](../README.md#platform-configuration-arm64) for arm64 notes.
 
-For comparator runs that need a specific upgrade era, override the zcashd activation heights and use a separate data volume:
-
-```bash
-Z3_ZCASHD_DATA_PATH=./.tmp/zcashd-canopy-data \
-ZCASHD_NU5_ACTIVATION_HEIGHT=100 \
-docker compose --env-file .env.regtest --profile zcashd up -d --force-recreate zcashd
-```
-
-This keeps the default Z3 regtest state separate from comparator state and allows V4/Canopy fixtures before NU5 activation.
+The activation heights are hardcoded in `docker-compose.regtest.yml`, not operator-tunable env vars, so the comparator chain stays aligned with Zebra, Zaino, and Zallet. To experiment with a different upgrade era, edit the `-nuparams` flags in a local override file and point zcashd at a throwaway data volume (`Z3_ZCASHD_DATA_PATH`).
 
 ## Test routing
 
@@ -98,7 +89,7 @@ curl -s -X POST -H "Content-Type: application/json" \
 
 ## Test Zaino gRPC
 
-Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) with TLS. In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `--insecure` flag tells grpcurl to accept the self-signed certificate.
+Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) as plaintext h2c (no TLS). In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `-plaintext` flag tells grpcurl to skip TLS.
 
 Initialize the zaino submodule if you haven't already (needed for the proto files):
 
@@ -109,7 +100,7 @@ git submodule update --init zaino
 Test with `GetLightdInfo` (from the repo root):
 
 ```bash
-grpcurl -insecure \
+grpcurl -plaintext \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
   127.0.0.1:28137 \
@@ -119,7 +110,7 @@ grpcurl -insecure \
 Get the latest block height:
 
 ```bash
-grpcurl -insecure \
+grpcurl -plaintext \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
   -d '{}' \
@@ -172,8 +163,8 @@ Regtest monitoring UI ports are Grafana `23000`, Prometheus `29094`, Jaeger UI `
 ## Notes
 
 - Credentials: `zebra` / `zebra` (hardcoded for regtest only)
-- Zallet uses regtest nuparams activating all upgrades at block 1
+- Regtest activates upgrades through Canopy at block 1 and NU5/Orchard at block 2 (Zebra, Zaino, Zallet, and the zcashd comparator all agree)
 - Zaino uses username/password auth in regtest (not cookie auth)
-- Zaino gRPC uses TLS with the same self-signed certificate as mainnet/testnet
+- Zaino gRPC is plaintext h2c on all networks; terminate edge TLS at a reverse proxy if exposed beyond the host
 - zcashd is optional and only starts when the `zcashd` profile is enabled
 - The rpc-router source is in `rpc-router/`; it is built automatically on first `docker compose up`

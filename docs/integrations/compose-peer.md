@@ -75,7 +75,7 @@ Z3_ZEBRA_CONTAINER_PORT=18232
 
 ## Per-network container ports
 
-Container ports are not host ports. Inside the network, services use Zebra's per-network defaults; Zaino and Zallet container ports do not vary by network.
+Container ports are not host ports. Inside the network, services use Zebra's per-network defaults; Zaino and Zallet container ports do not vary by network. Regtest reuses Zebra's testnet container port, so testnet and regtest share the same in-network address (`zebra:18232`); only their published host ports differ (testnet `18232`, regtest `29232`).
 
 | Network | Zebra RPC | Zaino gRPC | Zallet RPC |
 |---------|-----------|-------------|-------------|

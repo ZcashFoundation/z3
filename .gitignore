@@ -24,10 +24,6 @@ target/
 # =============================================================================
 config/**
 !config/.gitkeep
-# TLS directory structure (cert + key are generated locally)
-!config/tls/
-config/tls/*
-!config/tls/.gitkeep
 # Per-network: track only .example templates; live .toml files are local
 !config/mainnet/
 !config/mainnet/zaino.toml.example
@@ -46,7 +42,9 @@ config/tls/*
 # Local comparator state
 .tmp/
 
-# Ignore docker compose overrides created from the matching .example templates.
+# Mainnet auto-loads docker-compose.override.yml when present (Compose's native
+# behavior; absent is not an error). Per-network overrides are opt-in via -f or
+# COMPOSE_FILE, so they are gitignored too if an operator creates one.
 docker-compose.override.yml
 docker-compose.testnet.override.yml
 docker-compose.regtest.override.yml

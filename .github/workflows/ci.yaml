@@ -30,8 +30,6 @@ jobs:
             cp config/$net/zaino.toml.example config/$net/zaino.toml
             touch config/$net/zallet_identity.txt
           done
-          mkdir -p config/tls
-          touch config/tls/zaino.crt config/tls/zaino.key
 
       - name: Validate compose for every network
         run: |
@@ -79,18 +77,12 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Stage local files (live TOMLs from templates, TLS, identity)
+      - name: Stage local files (live TOMLs from templates, identity)
         # Mirrors the file setup step without requiring rage in CI. The sed
         # command patches the live gitignored copy, not the tracked template.
         run: |
           cp config/regtest/zallet.toml.example config/regtest/zallet.toml
           cp config/regtest/zaino.toml.example config/regtest/zaino.toml
-          mkdir -p config/tls
-          openssl req -x509 -newkey rsa:2048 \
-            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
-            -sha256 -days 1 -nodes -subj "/CN=localhost" \
-            -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
-          chmod 644 config/tls/zaino.key config/tls/zaino.crt
           echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
           SALT=$(openssl rand -hex 16)
           HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
@@ -213,12 +205,6 @@ jobs:
         run: |
           cp config/testnet/zallet.toml.example config/testnet/zallet.toml
           cp config/testnet/zaino.toml.example config/testnet/zaino.toml
-          mkdir -p config/tls
-          openssl req -x509 -newkey rsa:2048 \
-            -keyout config/tls/zaino.key -out config/tls/zaino.crt \
-            -sha256 -days 1 -nodes -subj "/CN=localhost" \
-            -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
-          chmod 644 config/tls/zaino.key config/tls/zaino.crt
           echo "# dummy identity for CI" > config/testnet/zallet_identity.txt
 
       - name: Start testnet zebra and cookie-permissions sidecar

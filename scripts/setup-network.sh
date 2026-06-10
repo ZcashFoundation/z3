@@ -70,48 +70,6 @@ ensure_identity() {
     log "==> $NETWORK/zallet_identity.txt: generated."
 }
 
-ensure_tls() {
-    local cert="$REPO_ROOT/config/tls/zaino.crt"
-    local key="$REPO_ROOT/config/tls/zaino.key"
-
-    if [ -f "$cert" ] && [ -f "$key" ]; then
-        log "==> tls/zaino.{crt,key}: present."
-        return
-    fi
-
-    if ! command -v openssl >/dev/null 2>&1; then
-        log "FAIL: openssl not found." >&2
-        exit 1
-    fi
-
-    mkdir -p "$REPO_ROOT/config/tls"
-    openssl req -x509 -newkey rsa:4096 \
-        -keyout "$key" -out "$cert" \
-        -sha256 -days 365 -nodes -subj "/CN=localhost" \
-        -addext "subjectAltName=DNS:localhost,DNS:zaino,IP:127.0.0.1" 2>/dev/null
-    log "==> tls/zaino.{crt,key}: generated (self-signed, 1 year)."
-}
-
-copy_compose_override() {
-    # testnet and regtest load docker-compose.<network>.override.yml from
-    # COMPOSE_FILE; the file has to exist for compose not to error. mainnet
-    # auto-loads docker-compose.override.yml only when present, so we skip it.
-    local file="docker-compose.$NETWORK.override.yml"
-    local example="$REPO_ROOT/$file.example"
-    local active="$REPO_ROOT/$file"
-
-    if [ -f "$active" ]; then
-        log "==> $file: present, leaving operator copy untouched."
-        return
-    fi
-    if [ ! -f "$example" ]; then
-        log "==> $file: no template at $example.example, skipping."
-        return
-    fi
-    cp "$example" "$active"
-    log "==> $file: created from .example template (empty placeholder; edit freely)."
-}
-
 mkdir -p "$CONFIG_DIR"
 
 copy_template zaino.toml
@@ -121,14 +79,7 @@ copy_template zallet.toml
 if [ "$NETWORK" = "regtest" ]; then
     copy_template zebra.toml
 fi
-# testnet and regtest auto-load a per-network override via COMPOSE_FILE;
-# create the live override file from the template if missing so compose
-# does not error on a missing file.
-if [ "$NETWORK" = "testnet" ] || [ "$NETWORK" = "regtest" ]; then
-    copy_compose_override
-fi
 ensure_identity
-ensure_tls
 
 log
 log "Setup complete for $NETWORK."

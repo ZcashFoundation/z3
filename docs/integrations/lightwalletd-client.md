@@ -1,6 +1,6 @@
 # Lightwalletd-compatible client integration
 
-Your service is a wallet, block explorer, or scanner that speaks the lightwalletd `CompactTxStreamer` gRPC protocol. Z3's Zaino exposes that protocol with TLS on the documented port.
+Your service is a wallet, block explorer, or scanner that speaks the lightwalletd `CompactTxStreamer` gRPC protocol. Z3's Zaino exposes that protocol as plaintext HTTP/2 (h2c) on the documented port. Terminate TLS at a reverse proxy if you expose Zaino beyond the host (see [Edge TLS in production](#edge-tls-in-production)).
 
 ## Prerequisites
 
@@ -10,15 +10,15 @@ Your service is a wallet, block explorer, or scanner that speaks the lightwallet
 
 ## Endpoint per network
 
-Zaino's gRPC port uses TLS and follows the contract's port matrix:
+Zaino's gRPC port is plaintext h2c and follows the contract's port matrix:
 
 | Network | Host endpoint |
 |---------|----------------|
-| Mainnet | `https://127.0.0.1:8137` |
-| Testnet | `https://127.0.0.1:18137` |
-| Regtest | `https://127.0.0.1:28137` |
+| Mainnet | `127.0.0.1:8137` |
+| Testnet | `127.0.0.1:18137` |
+| Regtest | `127.0.0.1:28137` |
 
-The certificate is self-signed (generated at first install). Production deployments should replace `config/tls/zaino.{crt,key}` with certificates from a trusted CA.
+There is no TLS on this listener. The Z3 stack runs Zaino with its TLS guard compiled out (the `-no-tls` image), so intra-stack and host-side gRPC is unencrypted. Anything exposed to a network you do not control should sit behind a TLS-terminating reverse proxy.
 
 ## Regtest auth
 
@@ -33,15 +33,15 @@ The .proto files are already vendored in this repo as a submodule under
 # One-time: fetch the vendored Zaino submodule
 git submodule update --init zaino
 
-# Probe the endpoint (mainnet example)
-grpcurl -insecure \
+# Probe the endpoint (mainnet example). -plaintext skips TLS.
+grpcurl -plaintext \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
   127.0.0.1:8137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
 
 # Get the latest block
-grpcurl -insecure \
+grpcurl -plaintext \
   -import-path zaino/zaino-proto/proto \
   -proto service.proto \
   -d '{}' \
@@ -49,20 +49,14 @@ grpcurl -insecure \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock
 ```
 
-`--insecure` accepts the self-signed certificate. In production, configure your gRPC client to trust the actual CA your TLS cert was issued by.
-
 ## Rust (Tonic) example
 
 ```rust
-use tonic::transport::{Channel, ClientTlsConfig, Endpoint};
+use tonic::transport::{Channel, Endpoint};
 use compact_tx_streamer_client::CompactTxStreamerClient;
 
-let tls_config = ClientTlsConfig::new()
-    .with_native_roots()       // or .ca_certificate(...) for a custom CA
-    .domain_name("localhost");
-
-let channel = Endpoint::from_static("https://127.0.0.1:8137")
-    .tls_config(tls_config)?
+// Plaintext h2c: use http:// and no TLS config.
+let channel = Endpoint::from_static("http://127.0.0.1:8137")
     .connect()
     .await?;
 
@@ -80,8 +74,7 @@ import { CompactTxStreamer } from "./gen/service_pb";
 
 const transport = createGrpcTransport({
     httpVersion: "2",
-    baseUrl: "https://127.0.0.1:8137",
-    nodeOptions: { rejectUnauthorized: false },   // for self-signed certs only
+    baseUrl: "http://127.0.0.1:8137",   // plaintext h2c; no TLS
 });
 
 const client = createClient(CompactTxStreamer, transport);
@@ -92,18 +85,17 @@ const info = await client.getLightdInfo({});
 
 | Service | Audience | Protocol |
 |---------|----------|----------|
-| **Zaino** | External light-wallet clients (mobile wallets, scanners) | gRPC `CompactTxStreamer` over TLS |
+| **Zaino** | External light-wallet clients (mobile wallets, scanners) | gRPC `CompactTxStreamer` over plaintext h2c |
 | **Zallet** | Operator wallet (the operator's own keys, full RPC surface) | JSON-RPC over HTTP |
 
 If you're writing a mobile wallet or a public-facing scanner, use Zaino. If you're administering the operator's wallet (creating addresses, sending transactions, importing keys), use Zallet.
 
-## TLS in production
+## Edge TLS in production
 
-The default self-signed cert is fine for local development. For any deployment exposed beyond `127.0.0.1`:
+The gRPC listener is plaintext, which is fine inside the Docker network and for local development. Wallet clients on the public internet expect TLS, so for any deployment exposed beyond `127.0.0.1`:
 
-1. Get a certificate from a trusted CA for the hostname clients will dial.
-2. Replace `config/tls/zaino.{crt,key}` with the new files.
-3. Restart Zaino: `docker compose --env-file .env.<network> restart zaino`.
-4. Configure your client to validate the cert against the CA (drop the `--insecure` / `rejectUnauthorized: false`).
+1. Put a reverse proxy (nginx, Caddy, Envoy, or your cloud load balancer) in front of Zaino and terminate TLS there with a certificate from a trusted CA.
+2. Proxy decrypted h2c traffic to Zaino's gRPC port on the internal network.
+3. Point clients at the proxy's `https://` endpoint; the proxy handles TLS and forwards plaintext gRPC to Zaino.
 
-The TLS cert is the same across all networks (shared file); only the gRPC host port differs per network.
+This keeps certificate management at the edge where it belongs, rather than baking a self-signed cert into the node stack.

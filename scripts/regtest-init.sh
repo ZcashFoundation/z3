@@ -34,6 +34,29 @@ log() {
     printf '%s\n' "$*"
 }
 
+require_compose_v2() {
+    # This stack relies on the colon-separated COMPOSE_FILE merge and the
+    # !override tag, both Docker Compose v2.24.4+ features. The legacy v1
+    # `docker-compose` binary cannot load them, so we require the v2 plugin
+    # and do not fall back to v1.
+    local ver need="2.24.4"
+    # A single `docker compose version --short` both proves the v2 plugin
+    # exists (non-zero exit otherwise) and yields the version to gate on.
+    if ! ver="$(docker compose version --short 2>/dev/null)"; then
+        log "Docker Compose v2 is required (the 'docker compose' plugin)."
+        log "The legacy 'docker-compose' v1 binary cannot load this stack's"
+        log "COMPOSE_FILE merge and !override tag. Install Compose v2.24.4+:"
+        log "  https://docs.docker.com/compose/install/"
+        exit 1
+    fi
+    ver="${ver#v}"
+    if [ -n "$ver" ] && [ "$(printf '%s\n%s\n' "$need" "$ver" | sort -V | head -n1)" != "$need" ]; then
+        log "Docker Compose $ver found, but >= $need is required (the regtest"
+        log "overlay uses the !override tag). Upgrade Docker Compose."
+        exit 1
+    fi
+}
+
 ensure_openssl() {
     if command -v openssl > /dev/null 2>&1; then
         return
@@ -87,6 +110,8 @@ update_zallet_rpc_pwhash() {
 
     log "==> Generated zallet RPC pwhash in ${CONFIG_DIR}/zallet.toml"
 }
+
+require_compose_v2
 
 DOCKER="docker"
 if ! docker info > /dev/null 2>&1; then

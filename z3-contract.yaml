@@ -54,8 +54,7 @@ networks:
       zcashd: {name: "z3-mainnet-zcashd", profile: zcashd}
     ports:
       zebra_rpc:          {container: 8232,  host: 8232}
-      zebra_p2p:          {container: 8233}                 # container-only; not published to host
-      zebra_indexer:      {container: 8230,  host: 8230}
+      zebra_p2p:          {container: 8233,  host: 8233}     # published for inbound peers
       zebra_health:       {container: 8080,  host: 8080}
       zebra_metrics:      {container: 9999}                 # in-network Prometheus scrape endpoint
       zaino_grpc:         {container: 8137,  host: 8137}
@@ -86,8 +85,7 @@ networks:
       # Health, Zaino, Zallet host ports use a +10000 offset relative to
       # mainnet so the two networks can run concurrently on the same host.
       zebra_rpc:          {container: 18232, host: 18232}
-      zebra_p2p:          {container: 18233}
-      zebra_indexer:      {container: 18230, host: 18230}
+      zebra_p2p:          {container: 18233, host: 18233}
       zebra_health:       {container: 8080,  host: 18080}
       zebra_metrics:      {container: 9999}
       zaino_grpc:         {container: 8137,  host: 18137}
@@ -123,7 +121,6 @@ networks:
       # Host ports are explicit to avoid cross-service collisions.
       zebra_rpc:          {container: 18232, host: 29232}
       zebra_p2p:          {container: 18233}
-      zebra_indexer:      {container: 18230, host: 28230}
       zebra_health:       {container: 8080,  host: 28080}
       zebra_metrics:      {container: 9999}
       zaino_grpc:         {container: 8137,  host: 28137}
@@ -194,8 +191,8 @@ env_vars:
   ports:
     # Host ports (z3 controls the per-network port matrix; testnet/regtest offset).
     - {name: Z3_ZEBRA_HOST_RPC_PORT, namespace: z3, scope: host}
+    - {name: Z3_ZEBRA_HOST_P2P_PORT, namespace: z3, scope: host, description: "Published p2p port for inbound peers (mainnet/testnet; regtest is peerless and omits it)."}
     - {name: Z3_ZEBRA_HOST_HEALTH_PORT, namespace: z3, scope: host}
-    - {name: Z3_ZEBRA_HOST_INDEXER_PORT, namespace: z3, scope: host}
     - {name: Z3_ZAINO_HOST_GRPC_PORT, namespace: z3, scope: host}
     - {name: Z3_ZAINO_HOST_JSON_RPC_PORT, namespace: z3, scope: host}
     - {name: Z3_ZALLET_HOST_RPC_PORT, namespace: z3, scope: host}
@@ -206,7 +203,8 @@ env_vars:
     # 8232 mainnet / 18232 testnet). Zaino, Zallet, and zcashd container ports
     # are hardcoded in the compose because they do not differ per network.
     - {name: Z3_ZEBRA_RPC_PORT, namespace: z3, scope: container}
-    - {name: Z3_ZEBRA_INDEXER_PORT, namespace: z3, scope: container}
+    - {name: Z3_ZEBRA_P2P_PORT, namespace: z3, scope: container, description: "Zebra p2p port; network default 8233 mainnet / 18233 testnet."}
+    - {name: ZEBRA_NETWORK__EXTERNAL_ADDR, namespace: zebra, description: "Address advertised to peers for inbound p2p when behind NAT or a firewall."}
 
   paths:
     - {name: Z3_CHAIN_DATA_PATH, namespace: z3, description: "Override chain volume with a bind-mount path."}
@@ -214,9 +212,6 @@ env_vars:
     - {name: Z3_ZALLET_DATA_PATH, namespace: z3}
     - {name: Z3_ZCASHD_DATA_PATH, namespace: z3, profile: zcashd}
     - {name: Z3_COOKIE_PATH, namespace: z3, description: "Override cookie volume (advanced; breaks the shared-volume pattern)."}
-    # Zaino TLS paths use the native config-rs names directly (no Z3_ wrapper).
-    - {name: ZAINO_GRPC_SETTINGS__TLS__CERT_PATH, namespace: zaino, description: "Zaino gRPC TLS cert path inside container."}
-    - {name: ZAINO_GRPC_SETTINGS__TLS__KEY_PATH, namespace: zaino, description: "Zaino gRPC TLS key path inside container."}
 
   auth:
     - {name: ZEBRA_RPC__ENABLE_COOKIE_AUTH, namespace: zebra, description: "Toggles Zebra RPC cookie auth. Disabled in regtest."}
@@ -243,12 +238,6 @@ env_vars:
 
   mining:
     - {name: ZEBRA_MINING__MINER_ADDRESS, namespace: zebra, description: "Required for regtest mining and for --profile zcashd."}
-    - {name: ZCASHD_OVERWINTER_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_SAPLING_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_BLOSSOM_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_HEARTWOOD_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_CANOPY_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
-    - {name: ZCASHD_NU5_ACTIVATION_HEIGHT, namespace: zcashd, profile: zcashd}
 
   observability:
     - {name: Z3_PROMETHEUS_PORT, namespace: z3, profile: monitoring}

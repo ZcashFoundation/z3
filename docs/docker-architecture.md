@@ -18,7 +18,6 @@ docker-compose.regtest.yml      Regtest overlay (structural differences only)
 config/mainnet/                 Mainnet Zallet + Zaino configs + identity file
 config/testnet/                 Testnet equivalents
 config/regtest/                 Regtest equivalents
-config/tls/                     Shared Zaino TLS cert + key
 scripts/                        Operational scripts (regtest-init, fix-permissions, etc.)
 ```
 
@@ -160,16 +159,11 @@ Each network has its own age-encryption identity at `config/<network>/zallet_ide
 
 ```yaml
 x-common: &common
-  logging:
-    driver: json-file
-    options:
-      max-size: "50m"
-      max-file: "5"
   cap_drop: [ALL]
   security_opt: [no-new-privileges:true]
 ```
 
-Services reference this with `<<: *common`. This ensures consistent log rotation and security hardening across all services without repeating the configuration.
+Services reference this with `<<: *common` for consistent security hardening without repeating the configuration. Logging is intentionally absent (see "Log rotation" below).
 
 Top-level keys starting with `x-` are *extension fields*; Compose ignores them during processing but they serve as anchor sources for YAML reuse.
 
@@ -229,7 +223,16 @@ Prevents processes inside the container from gaining additional privileges throu
 
 ### Log rotation
 
-Without `max-size` and `max-file`, Docker's default `json-file` log driver grows logs unbounded. For a blockchain node running 24/7, this will eventually fill the disk. The `x-common` anchor configures 50 MB per log file with 5 rotated files (250 MB max per service).
+z3 does not pin a `logging:` driver on any service. A Compose `logging:` block overrides the driver the operator configured on the Docker daemon (journald, local, a remote collector), so forcing `json-file` would silently undo that choice. Bounding log growth is the daemon's job: set a rotating default once in `/etc/docker/daemon.json`, which applies to every container on the host.
+
+```json
+{
+  "log-driver": "local",
+  "log-opts": { "max-size": "50m", "max-file": "5" }
+}
+```
+
+The `local` driver rotates by default and is more efficient than `json-file`. Operators who want per-service control add a `logging:` block in their override file instead.
 
 ## Image override variables
 
@@ -239,6 +242,8 @@ All service images are overridable. Compose references each image as `${Z3_<SERV
 - Test a pre-release candidate without editing the compose file.
 - Use a private registry mirror in air-gapped environments.
 - Run CI with custom-built images via shell variables.
+
+Tags are pinned, never floating (`:latest`). On a consensus-critical node platform a silent major bump on the next `pull` or recreate could fork the operator off the network, so upgrades are deliberate: bump the inline default in a reviewed change, set `Z3_<SERVICE>_IMAGE` to move a single service, or let Renovate (`renovate.json`) raise an auditable bump PR. Dependabot stays scoped to GitHub Actions because it cannot parse the `${VAR:-tag}` default form.
 
 The `Z3_*_IMAGE` prefix marks these as part of the public contract; `z3-contract.yaml` lists the env-var schema in full.
 

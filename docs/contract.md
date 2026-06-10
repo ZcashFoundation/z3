@@ -1,5 +1,7 @@
 # Z3 Platform Contract
 
+> This is for **integrators and tooling** that attach to a running Z3 stack, and for agents that consume the API. If you only run Z3, you do not need any of this; go to the [README operator guide](../README.md#for-operators).
+
 This document is the human-facing version of [`z3-contract.yaml`](../z3-contract.yaml). The YAML is the source of truth for integration identifiers and is validated against [`z3-contract.schema.json`](../z3-contract.schema.json). This doc explains what each identifier means, what consumers can rely on, and what is explicitly out of scope.
 
 For copy-paste integration examples, see [`docs/integrations/`](integrations/).
@@ -70,7 +72,7 @@ Three namespaces keep stack-level settings separate from service-native settings
 
 **`Z3_*` (stack-level settings).** Used for host port mappings, image pins, volume path overrides, the per-service `RUST_LOG` split, multi-network selection (`Z3_NETWORK`, `Z3_CONFIG_DIR`), and scoping wrappers such as `Z3_REGTEST_RPC_ROUTER_USER`. Image-pin defaults are `${VAR:-tag}` fallbacks in `docker-compose.yml`.
 
-**Service-native names (passed through as-is).** Used when the underlying service has a documented convention. Operators map straight from the service's docs without learning a z3 wrapper. Examples: `GF_SECURITY_ADMIN_PASSWORD` (Grafana), `ZAINO_GRPC_SETTINGS__TLS__*` (Zaino config-rs), `ZCASHD_*` (zcashd image entrypoint), `ZEBRA_*` (Zebra config-rs, including `ZEBRA_HEALTH__*`, `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_TRACING__*`, `ZEBRA_MINING__MINER_ADDRESS`).
+**Service-native names (passed through as-is).** Used when the underlying service has a documented convention. Operators map straight from the service's docs without learning a z3 wrapper. Examples: `GF_SECURITY_ADMIN_PASSWORD` (Grafana), `ZCASHD_*` (zcashd image entrypoint), `ZEBRA_*` (Zebra config-rs, including `ZEBRA_HEALTH__*`, `ZEBRA_RPC__ENABLE_COOKIE_AUTH`, `ZEBRA_NETWORK__EXTERNAL_ADDR`, `ZEBRA_TRACING__*`, `ZEBRA_MINING__MINER_ADDRESS`).
 
 **Ecosystem-standard names (inherited; not part of the z3 contract).** Documented for completeness because operators encounter them in our docs: `COMPOSE_FILE`, `RUST_LOG`, `RUST_BACKTRACE`. The YAML lists them under `ecosystem_vars:`.
 
@@ -90,7 +92,7 @@ These are explicitly OUT of the contract; they may change without a major versio
 - **Per-network config file contents** (the live `config/<network>/zallet.toml`, `config/<network>/zaino.toml`). These are local files (see "File ownership" below); their contents are not part of the consumer-facing contract.
 - **Internal env vars** (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SETTINGS__*`, `ZCASHD_RPCBIND`, etc.). Z3 sets them inside the compose `environment:` block; operators set the public knobs documented above instead.
 - **Monitoring identifiers** (Prometheus job labels, Grafana datasource UIDs, dashboard UIDs). Internal.
-- **Compose secrets and configs** (`zaino_tls_cert`, `zaino_tls_key`, `prometheus_config`). Internal.
+- **Compose configs** (`prometheus_config`). Internal.
 
 ## File ownership
 
@@ -117,11 +119,10 @@ These files are created locally by `scripts/setup-network.sh <network>` and edit
 |------|------------|---------|
 | `.env` | Local user | Per-host overrides; see "How `.env` is loaded" below. |
 | `docker-compose.override.yml` | Local user (template in `.example`) | Per-host overrides for compose service definitions. Auto-loaded for mainnet. |
-| `docker-compose.testnet.override.yml` | Local user (optional) | Per-host testnet overrides. **Not auto-loaded;** add to `COMPOSE_FILE` explicitly. |
+| `docker-compose.<network>.override.yml` | Local user (optional) | Per-host testnet/regtest overrides. **Not auto-loaded;** pass with `-f` or append to `COMPOSE_FILE` explicitly. |
 | `config/<network>/zallet.toml` | `setup-network.sh` (cp from `.example`) | Active Zallet config. Edit to taste. |
 | `config/<network>/zaino.toml` | `setup-network.sh` (cp from `.example`) | Active Zaino config. Edit to taste. |
 | `config/<network>/zallet_identity.txt` | `setup-network.sh` (`rage-keygen`) | Per-operator wallet encryption key. Back this up. |
-| `config/tls/zaino.crt`, `config/tls/zaino.key` | `setup-network.sh` (`openssl`) | TLS cert for Zaino's gRPC endpoint. |
 
 After `git pull`, diff your live `.toml` against the refreshed `.example`; apply any desired changes by hand:
 

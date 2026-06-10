@@ -61,6 +61,10 @@ class Asserter:
         else:
             print(f"  OK   {label}")
 
+    def fail(self, label: str) -> None:
+        print(f"  FAIL {label}")
+        self.failures += 1
+
 
 def load_contract() -> dict:
     if not CONTRACT_FILE.exists():
@@ -97,12 +101,36 @@ def render_compose(network_name: str, env_file: pathlib.Path) -> str:
         )
         return proc.stdout
     except FileNotFoundError:
-        print("FAIL: docker not found in PATH", file=sys.stderr)
+        print("FAIL: docker not found in PATH. Install Docker Engine with the",
+              file=sys.stderr)
+        print("      Compose v2 plugin: https://docs.docker.com/compose/install/",
+              file=sys.stderr)
         sys.exit(2)
     except subprocess.CalledProcessError as e:
+        stderr = e.stderr or ""
+        if "is not a docker command" in stderr or "'compose'" in stderr:
+            print("FAIL: the 'docker compose' v2 plugin is not available.",
+                  file=sys.stderr)
+            print("      This stack requires Compose v2.24.4+; the legacy v1",
+                  file=sys.stderr)
+            print("      'docker-compose' binary is not supported. Install v2:",
+                  file=sys.stderr)
+            print("      https://docs.docker.com/compose/install/", file=sys.stderr)
+            sys.exit(2)
         print(f"FAIL: docker compose config failed for {env_file.name}:")
-        print(e.stderr)
+        print(stderr)
         sys.exit(1)
+
+
+def validate_no_undeclared_host_ports(asserter: Asserter, ports: dict, config: str) -> None:
+    """Assert compose publishes no host port the contract omits (compose -> contract)."""
+    contract_hosts = {p["host"] for p in ports.values() if p.get("host") is not None}
+    rendered_hosts = {int(p) for p in re.findall(r'published: "(\d+)"', config)}
+    undeclared = sorted(rendered_hosts - contract_hosts)
+    for extra in undeclared:
+        asserter.fail(f"published host port {extra} is not declared in the contract")
+    if not undeclared:
+        print("  OK   no undeclared published host ports")
 
 
 def validate_network(asserter: Asserter, network_name: str, spec: dict) -> None:
@@ -135,11 +163,6 @@ def validate_network(asserter: Asserter, network_name: str, spec: dict) -> None:
         config,
     )
     asserter.present(
-        f"Zebra indexer listen = {ports['zebra_indexer']['container']}",
-        rf"ZEBRA_RPC__INDEXER_LISTEN_ADDR: 0\.0\.0\.0:{ports['zebra_indexer']['container']}$",
-        config,
-    )
-    asserter.present(
         f"Zebra metrics listen = {ports['zebra_metrics']['container']}",
         rf"ZEBRA_METRICS__ENDPOINT_ADDR: 0\.0\.0\.0:{ports['zebra_metrics']['container']}$",
         config,
@@ -169,15 +192,19 @@ def validate_network(asserter: Asserter, network_name: str, spec: dict) -> None:
             config,
         )
 
-    # Host ports: every contracted port that has a host mapping is asserted.
-    # Ports without a host key (e.g., zebra_p2p, zebra_metrics) are not
-    # published, so the assertion is skipped.
+    # Host ports: every contracted port that has a host mapping must be
+    # published. Entries without a host key (zebra_metrics on every network,
+    # zebra_p2p on regtest) are container-only, so the assertion is skipped.
     for key, port_spec in ports.items():
         host = port_spec.get("host")
         if host is None:
             continue
         asserter.present(f"{key} host = {host}",
                          rf'published: "{host}"', config)
+
+    # Bidirectional guard: compose must not publish a host port the contract
+    # omits (the loop above already covers contract -> compose).
+    validate_no_undeclared_host_ports(asserter, ports, config)
 
     # Zaino must point at Zebra's per-network RPC container port.
     asserter.present(
