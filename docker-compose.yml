@@ -206,7 +206,11 @@ services:
     restart: unless-stopped
     stop_grace_period: 30s
     <<: *common
-    user: "999:999"
+    # The zodlinc/zcashd image runs as the zcash user (uid 2001) with its
+    # datadir under /srv/zcashd. Match that uid so the entrypoint can write,
+    # and mount the data volume at /srv/zcashd (owned by zcash in the image,
+    # so a fresh named volume inherits writable ownership).
+    user: "2001:2001"
     command:
       - zcashd
       - -conf=/dev/null
@@ -229,7 +233,7 @@ services:
       ZCASHD_RPCPORT: "38232"
       ZCASHD_ALLOWIP: ${ZCASHD_RPC_ALLOWIP:-0.0.0.0/0}
     volumes:
-      - ${Z3_ZCASHD_DATA_PATH:-zcashd}:/home/zcash/.zcash
+      - ${Z3_ZCASHD_DATA_PATH:-zcashd}:/srv/zcashd
     ports:
       - "${Z3_ZCASHD_HOST_RPC_BIND:-127.0.0.1}:${Z3_ZCASHD_HOST_RPC_PORT:-60232}:38232"
     healthcheck:

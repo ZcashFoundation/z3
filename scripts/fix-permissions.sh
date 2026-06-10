@@ -31,8 +31,8 @@ ZAINO_UID=1000
 ZAINO_GID=1000
 ZALLET_UID=1000
 ZALLET_GID=1000
-ZCASHD_UID=999
-ZCASHD_GID=999
+ZCASHD_UID=2001
+ZCASHD_GID=2001
 
 # Show usage
 usage() {
@@ -42,7 +42,7 @@ usage() {
     echo "  zebra   - Zebra blockchain state (UID:GID 10001:10001, perms 700)"
     echo "  zaino   - Zaino indexer data (UID:GID 1000:1000, perms 700)"
     echo "  zallet  - Zallet wallet data (UID:GID 1000:1000, perms 700)"
-    echo "  zcashd  - Optional zcashd comparator data (UID:GID 999:999, perms 700)"
+    echo "  zcashd  - Optional zcashd comparator data (UID:GID 2001:2001, perms 700)"
     echo "  cookie  - Shared cookie directory (UID:GID 10001:10001, perms 750)"
     echo ""
     echo "Examples:"
