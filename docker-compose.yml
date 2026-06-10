@@ -34,12 +34,6 @@ services:
     # Zebra is multi-arch; Docker selects the host's native variant.
     # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
     platform: ${DOCKER_PLATFORM:-}
-    build:
-      context: ./zebra
-      dockerfile: docker/Dockerfile
-      target: runtime
-      args:
-        FEATURES: ${Z3_ZEBRA_BUILD_FEATURES:-default-release-binaries}
     restart: unless-stopped
     stop_grace_period: 30s
     <<: *common
@@ -120,17 +114,11 @@ services:
   zaino:
     # The -no-tls tag compiles out Zaino's "TLS required on a non-private bind"
     # guard, so intra-container gRPC on 0.0.0.0:8137 runs as plaintext h2c.
-    # NO_TLS=true below makes a local arm64 build match that pin. Terminate
-    # edge TLS at a reverse proxy if Zaino is exposed beyond the host.
+    # Terminate edge TLS at a reverse proxy if Zaino is exposed beyond the host.
     image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.4.0-rc.2-no-tls}
-    # Zaino publishes linux/amd64 only; arm64 hosts run under emulation
-    # unless the operator builds from the ./zaino submodule.
+    # Zaino publishes linux/amd64 only; arm64 hosts run under emulation unless
+    # the operator builds from source (see docker-compose.build.yml).
     platform: ${DOCKER_PLATFORM:-linux/amd64}
-    build:
-      context: ./zaino
-      dockerfile: Dockerfile
-      args:
-        NO_TLS: "true"
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
@@ -167,12 +155,6 @@ services:
   zallet:
     image: ${Z3_ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
     platform: ${DOCKER_PLATFORM:-linux/amd64}
-    build:
-      context: ./zallet
-      dockerfile: Dockerfile
-      target: runtime
-      tags:
-        - z3_zallet:local
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common

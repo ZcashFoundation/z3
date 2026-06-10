@@ -1,0 +1,40 @@
+# Opt-in source-build overlay.
+#
+# The default stack pulls pinned images and needs no source checkout. This
+# overlay re-adds build: contexts so contributors can build Zebra, Zaino, and
+# Zallet from upstream source (for native arm64, or to test a local patch).
+#
+# Usage:
+#   scripts/vendor.sh                 # clone upstream into vendor/ at the pinned tags
+#   docker compose -f docker-compose.yml -f docker-compose.build.yml build
+#
+# or append it to COMPOSE_FILE for the session:
+#   COMPOSE_FILE=docker-compose.yml:docker-compose.build.yml docker compose build zaino
+#
+# The build args here mirror the published pins (Zebra's FEATURES, Zaino's
+# NO_TLS guard) so a local build matches the image it replaces. Bump the tags
+# in scripts/vendor.sh together with the image pins in docker-compose.yml.
+
+services:
+  zebra:
+    build:
+      context: ./vendor/zebra
+      dockerfile: docker/Dockerfile
+      target: runtime
+      args:
+        FEATURES: ${Z3_ZEBRA_BUILD_FEATURES:-default-release-binaries}
+
+  zaino:
+    build:
+      context: ./vendor/zaino
+      dockerfile: Dockerfile
+      args:
+        NO_TLS: "true"
+
+  zallet:
+    build:
+      context: ./vendor/zallet
+      dockerfile: Dockerfile
+      target: runtime
+      tags:
+        - z3_zallet:local

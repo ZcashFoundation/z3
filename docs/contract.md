@@ -104,7 +104,7 @@ These files are tracked defaults. Operators should not edit them; doing so creat
 
 | Path | Purpose |
 |------|---------|
-| `docker-compose.yml`, `docker-compose.regtest.yml` | Stack topology. Override via `docker-compose.override.yml` (see below). |
+| `docker-compose.yml`, `docker-compose.regtest.yml`, `docker-compose.build.yml` | Stack topology and the opt-in source-build overlay. Override via `docker-compose.override.yml` (see below). |
 | `z3-contract.yaml`, `z3-contract.schema.json`, `docs/contract.md` | The contract, its schema, and this guide. |
 | `.env.example` | Reference for every public env var. |
 | `.env.mainnet`, `.env.testnet`, `.env.regtest` | Per-network defaults. Override via `.env`. |

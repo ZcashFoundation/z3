@@ -9,6 +9,7 @@ For the public contract (network names, volume names, port matrix), see [`contra
 ```text
 docker-compose.yml              Base stack (Zebra + Zaino + Zallet + optional profiles)
 docker-compose.regtest.yml      Regtest overlay (structural differences only)
+docker-compose.build.yml        Opt-in source-build overlay (scripts/vendor.sh)
 .env.mainnet                    Mainnet selection + canonical ports
 .env.testnet                    Testnet selection + offset ports
 .env.regtest                    Regtest selection + overlay loader

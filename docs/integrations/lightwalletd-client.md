@@ -6,7 +6,7 @@ Your service is a wallet, block explorer, or scanner that speaks the lightwallet
 
 - A running Z3 stack: `docker compose --env-file .env.<network> up -d` in the Z3 repo.
 - A gRPC client for your language (Tonic for Rust, grpcio for Python, grpc-java, etc.) or the `grpcurl` CLI for ad-hoc calls.
-- The lightwalletd / Zaino `.proto` files. Either vendor them or pull from the Zaino submodule (`zaino/zaino-proto/proto/service.proto`).
+- The lightwalletd / Zaino `.proto` files. Fetch them into the Z3 repo with `scripts/vendor.sh zaino` (`vendor/zaino/zaino-proto/proto/service.proto`).
 
 ## Endpoint per network
 
@@ -26,23 +26,22 @@ Regtest's contract declares `rpc_auth.mode: username_password` for Zebra and Zal
 
 ## Quick test with `grpcurl`
 
-The .proto files are already vendored in this repo as a submodule under
-`zaino/zaino-proto/proto/`. Initialize it once and point grpcurl at that path.
+Fetch the upstream Zaino source (proto files included) and point grpcurl at that path:
 
 ```bash
-# One-time: fetch the vendored Zaino submodule
-git submodule update --init zaino
+# One-time: fetch the Zaino proto files into vendor/
+scripts/vendor.sh zaino
 
 # Probe the endpoint (mainnet example). -plaintext skips TLS.
 grpcurl -plaintext \
-  -import-path zaino/zaino-proto/proto \
+  -import-path vendor/zaino/zaino-proto/proto \
   -proto service.proto \
   127.0.0.1:8137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
 
 # Get the latest block
 grpcurl -plaintext \
-  -import-path zaino/zaino-proto/proto \
+  -import-path vendor/zaino/zaino-proto/proto \
   -proto service.proto \
   -d '{}' \
   127.0.0.1:8137 \

@@ -52,3 +52,6 @@ docker-compose.regtest.override.yml
 # Python bytecode caches (from scripts/validate-contract*.py)
 __pycache__/
 *.pyc
+
+# Opt-in source-build checkouts (scripts/vendor.sh)
+vendor/

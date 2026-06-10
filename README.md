@@ -48,7 +48,7 @@ docker compose --env-file .env.mainnet up -d zebra
 docker compose --env-file .env.mainnet up -d
 ```
 
-Images are pulled automatically; no build step or submodule init is needed.
+Images are pulled automatically; no build step or source checkout is needed.
 
 > [!IMPORTANT]
 > Running step 3 before Zebra reaches `/ready` makes Zaino and Zallet restart-loop until the sync catches up. The poller in step 2 exits only when Zebra is synced.
@@ -92,6 +92,7 @@ Z3 ships production-shaped defaults, but a few choices are yours to make before 
 - **Plan the wallet backup.** Keep the `z3-<network>-zallet` volume and `config/<network>/zallet_identity.txt` together; nothing else needs backup.
 - **Set a log rotation policy.** Z3 does not pin a logging driver, so containers use your Docker daemon default. Add size limits in `/etc/docker/daemon.json` (see the [FAQ](docs/faq.md)); otherwise logs grow unbounded on a 24/7 node.
 - **Decide p2p exposure.** Mainnet and testnet publish Zebra's p2p port for inbound peers. Behind NAT or a firewall, set `ZEBRA_NETWORK__EXTERNAL_ADDR` to the address peers should dial. Regtest is peerless and publishes no p2p.
+- **Tune the host network (Linux).** On a busy mainnet node, default kernel TCP buffer and connection-backlog limits can cap Zebra's peer throughput. See [Zebra's TCP tuning notes](https://github.com/ZcashFoundation/zebra/pull/10513) for the `sysctl` values worth raising.
 - **Bound resources on a shared host.** No CPU or memory limits are set by default: right for a dedicated node, easy to get wrong on a shared box. Add `deploy.resources.limits` in an override file if you need them.
 
 Z3 ships safe defaults: pinned image versions (no surprise upgrades), non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Upgrades stay deliberate: bump the version pin in a reviewed change, or set `Z3_<SERVICE>_IMAGE`.
@@ -229,14 +230,16 @@ Based on [Zebra's official requirements](https://zebra.zfnd.org/user/requirement
 <details>
 <summary><strong>Setup details</strong></summary>
 
-### Submodules
+### Building from source
 
-Pre-built images are used by default. To build from source:
+Pre-built images are pulled by default. To build Zebra, Zaino, and Zallet from upstream source instead, fetch the sources and add the opt-in build overlay:
 
 ```bash
-git submodule update --init --recursive
-docker compose --env-file .env.mainnet build
+scripts/vendor.sh
+docker compose -f docker-compose.yml -f docker-compose.build.yml build
 ```
+
+`scripts/vendor.sh` clones each upstream repo into a gitignored `vendor/` directory at the tag matching its image pin.
 
 ### First-run setup (`setup-network.sh`)
 
@@ -262,11 +265,11 @@ diff config/mainnet/zallet.toml config/mainnet/zallet.toml.example
 
 Zebra is multi-arch; Docker picks the host's native arch automatically, no override needed. Zaino and Zallet are pinned to `linux/amd64` because their upstream images publish amd64 only. On Apple Silicon those two run under emulation by default; the workload is light enough that this rarely matters.
 
-To run Zaino and Zallet natively on arm64, build them locally from the submodules:
+To run Zaino and Zallet natively on arm64, build them from source:
 
 ```bash
-git submodule update --init --recursive
-DOCKER_PLATFORM=linux/arm64 docker compose --env-file .env.mainnet build zaino zallet
+scripts/vendor.sh zaino zallet
+DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino zallet
 docker compose --env-file .env.mainnet up -d
 ```
 

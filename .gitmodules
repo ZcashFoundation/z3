@@ -1,9 +1,0 @@
-[submodule "zebra"]
-	path = zebra
-	url = https://github.com/ZcashFoundation/zebra
-[submodule "zaino"]
-	path = zaino
-	url = https://github.com/zingolabs/zaino
-[submodule "zallet"]
-	path = zallet
-	url = https://github.com/zcash/wallet
