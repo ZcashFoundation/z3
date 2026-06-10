@@ -83,6 +83,7 @@ jobs:
         run: |
           cp config/regtest/zallet.toml.example config/regtest/zallet.toml
           cp config/regtest/zaino.toml.example config/regtest/zaino.toml
+          cp config/regtest/zebra.toml.example config/regtest/zebra.toml
           echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
           SALT=$(openssl rand -hex 16)
           HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
