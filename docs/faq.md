@@ -143,7 +143,7 @@ Not from the pinned tags. The default Zaino and Zallet images publish `linux/amd
 
 Two ways forward if you need native arm64:
 
-1. **Build locally.** `docker-compose.yml` declares `build:` contexts pointing at the `./zaino` and `./zallet` submodules, so `DOCKER_PLATFORM=linux/arm64 docker compose build zaino zallet` produces local arm64 images.
+1. **Build locally.** Fetch the upstream sources with `scripts/vendor.sh zaino zallet`, then build with the opt-in overlay: `DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino zallet`.
 2. **Wait for the upstream tag to gain a multi-arch publish, then bump the pin.** Existing tags never gain new platform variants after the fact; only new tags do.
 
 Leaving these two services under emulation is fine in practice; the workload is light compared to Zebra's verifier, which runs natively.

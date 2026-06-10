@@ -8,7 +8,7 @@ Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and
 
 - Docker with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
 - [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys
-- For gRPC testing: [grpcurl](https://github.com/fullstorydev/grpcurl) and the zaino submodule initialized (`git submodule update --init zaino`)
+- For gRPC testing: [grpcurl](https://github.com/fullstorydev/grpcurl) and the Zaino proto files (`scripts/vendor.sh zaino`)
 
 ## First-time setup
 
@@ -78,17 +78,17 @@ curl -s -X POST -H "Content-Type: application/json" \
 
 Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) as plaintext h2c (no TLS). In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `-plaintext` flag tells grpcurl to skip TLS.
 
-Initialize the zaino submodule if you haven't already (needed for the proto files):
+Fetch the Zaino proto files if you haven't already:
 
 ```bash
-git submodule update --init zaino
+scripts/vendor.sh zaino
 ```
 
 Test with `GetLightdInfo` (from the repo root):
 
 ```bash
 grpcurl -plaintext \
-  -import-path zaino/zaino-proto/proto \
+  -import-path vendor/zaino/zaino-proto/proto \
   -proto service.proto \
   127.0.0.1:28137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
@@ -98,7 +98,7 @@ Get the latest block height:
 
 ```bash
 grpcurl -plaintext \
-  -import-path zaino/zaino-proto/proto \
+  -import-path vendor/zaino/zaino-proto/proto \
   -proto service.proto \
   -d '{}' \
   127.0.0.1:28137 \
