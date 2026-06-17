@@ -71,14 +71,20 @@ ensure_identity() {
 
     rage-keygen -o "$identity"
     chmod 600 "$identity"
-    # Zallet runs as uid 1000 (distroless image, no runtime chown). Grant that
-    # uid read access to the age key without widening it to other host users.
-    if command -v setfacl >/dev/null 2>&1; then
-        setfacl -m u:1000:r "$identity" \
-            || log "WARN: setfacl failed on $identity; zallet (uid 1000) may not be able to read it."
-    else
-        log "WARN: setfacl not found. Grant uid 1000 read on $identity before starting zallet"
-        log "      (install the 'acl' package, or 'chmod 644 $identity' to allow all local users)."
+    # Zallet runs as uid 1000 (distroless image, no runtime chown), so it can
+    # only read the age key if uid 1000 has read access. When the operator's
+    # host uid is already 1000 the 0600 file is readable as-is; otherwise grant
+    # uid 1000 read via a POSIX ACL without widening the key to other users.
+    if [ "$(id -u)" -ne 1000 ]; then
+        if command -v setfacl >/dev/null 2>&1 && setfacl -m u:1000:r "$identity"; then
+            : # uid 1000 granted read via ACL
+        else
+            log "FAIL: cannot grant uid 1000 read on $identity (host uid $(id -u) != 1000)." >&2
+            log "      zallet (uid 1000) could not read the age key and would fail to start." >&2
+            log "      Install the 'acl' package and run: setfacl -m u:1000:r $identity" >&2
+            log "      (or 'chmod 644 $identity' to allow all local users)." >&2
+            exit 1
+        fi
     fi
     log "==> $NETWORK/zallet_identity.txt: generated."
 }

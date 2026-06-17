@@ -88,6 +88,9 @@ jobs:
           # Mirror the permission end-state of setup-network.sh / regtest-init.sh
           # so the readability assertion below exercises the real contract:
           # non-secret TOMLs world-readable, the age key 0600 + ACL for uid 1000.
+          # Install acl explicitly so the setfacl call (and the ACL the uid-1000
+          # readability assertion depends on) does not rely on the runner image.
+          sudo apt-get update -qq && sudo apt-get install -y -qq acl
           chmod 644 config/regtest/zallet.toml config/regtest/zaino.toml config/regtest/zebra.toml
           chmod 600 config/regtest/zallet_identity.txt
           setfacl -m u:1000:r config/regtest/zallet_identity.txt
