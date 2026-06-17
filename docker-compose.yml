@@ -30,7 +30,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
+    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:latest}
     # Zebra is multi-arch; Docker selects the host's native variant.
     # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
     platform: ${DOCKER_PLATFORM:-}

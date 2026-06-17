@@ -309,7 +309,7 @@ Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
 # Pin a different image version
-Z3_ZEBRA_IMAGE=zfnd/zebra:5.0.0
+Z3_ZEBRA_IMAGE=zfnd/zebra:latest
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
