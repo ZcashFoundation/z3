@@ -95,7 +95,7 @@ Z3 ships production-shaped defaults, but a few choices are yours to make before 
 - **Tune the host network (Linux).** On a busy mainnet node, default kernel TCP buffer and connection-backlog limits can cap Zebra's peer throughput. See [Zebra's TCP tuning notes](https://github.com/ZcashFoundation/zebra/pull/10513) for the `sysctl` values worth raising.
 - **Bound resources on a shared host.** No CPU or memory limits are set by default: right for a dedicated node, easy to get wrong on a shared box. Add `deploy.resources.limits` in an override file if you need them.
 
-Z3 ships safe defaults: pinned image versions (no surprise upgrades), non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Upgrades stay deliberate: bump the version pin in a reviewed change, or set `Z3_<SERVICE>_IMAGE`.
+Z3 ships safe defaults: non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Zebra tracks the `latest` published image, so a `docker compose pull` can bring in a new Zebra release; for fully reproducible upgrades, pin a specific version with `Z3_ZEBRA_IMAGE`. Zaino and Zallet are pinned by default — bump them in a reviewed change or override with `Z3_ZAINO_IMAGE` / `Z3_ZALLET_IMAGE`.
 
 ### Monitoring
 
@@ -309,7 +309,7 @@ Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
 # Pin a different image version
-Z3_ZEBRA_IMAGE=zfnd/zebra:5.0.0
+Z3_ZEBRA_IMAGE=zfnd/zebra:latest
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
