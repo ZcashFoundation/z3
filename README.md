@@ -249,7 +249,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml build
 - Copies `config/<network>/zaino.toml.example` → `config/<network>/zaino.toml` (same)
 - Generates `config/<network>/zallet_identity.txt` via `rage-keygen` if missing
 
-Subsequent runs print which steps were skipped. Back up `zallet_identity.txt` together with the `z3-<network>-zallet` volume; without the identity file the wallet database cannot be decrypted.
+Subsequent runs leave existing file contents untouched, but still reconcile generated TOML modes and the Zallet identity permissions described below. Back up `zallet_identity.txt` together with the `z3-<network>-zallet` volume; without the identity file the wallet database cannot be decrypted.
 
 ### Per-network Zallet config
 
@@ -358,7 +358,7 @@ Fix permissions before starting:
 
 Zebra, Zaino, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
 
-Operators whose host uid is not `1000` do **not** need to coordinate uids for Zallet's bind-mounted config. Zallet runs as uid 1000 (distroless image), and `setup-network.sh` makes `zallet.toml` readable by that uid (`0644`) and grants the age key `zallet_identity.txt` read access for uid 1000 via a POSIX ACL (`setfacl -m u:1000:r`) while keeping it `0600` for everyone else. When your host uid is already `1000` the `0600` key is readable as-is and no ACL is needed; otherwise install the `acl` package on Linux. If your host uid is not `1000` and `setfacl` is unavailable, `setup-network.sh` stops with instructions rather than leaving Zallet to crash at startup — install `acl` and run `setfacl -m u:1000:r` on the identity file (or `chmod 644` it to allow all local users).
+Operators whose host uid is not `1000` do **not** need to coordinate uids for Zallet's bind-mounted config. Zallet runs as uid 1000 (distroless image), and `setup-network.sh` makes generated TOMLs readable by service containers (`0644`) and grants the age key `zallet_identity.txt` read access for uid 1000 via a POSIX ACL (`setfacl -m u:1000:r`) while keeping it `0600` for everyone else. The script re-applies this permission contract on every run, including existing files. When your host uid is already `1000` the `0600` key is readable as-is and no ACL is needed; otherwise install the `acl` package on Linux. If your host uid is not `1000` and `setfacl` is unavailable, `setup-network.sh` stops with instructions rather than leaving Zallet to crash at startup — install `acl` and run `setfacl -m u:1000:r` on the identity file (or `chmod 644` it to allow all local users).
 
 </details>
 

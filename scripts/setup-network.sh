@@ -29,6 +29,7 @@ esac
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="$REPO_ROOT/config/$NETWORK"
+ZALLET_UID=1000
 
 log() { printf '%s\n' "$*"; }
 
@@ -38,7 +39,7 @@ copy_template() {
     local active="$CONFIG_DIR/$file"
 
     if [ -f "$active" ]; then
-        log "==> $NETWORK/$file: present, leaving operator copy untouched."
+        log "==> $NETWORK/$file: present, leaving contents untouched."
         return
     fi
 
@@ -48,11 +49,42 @@ copy_template() {
     fi
 
     cp "$example" "$active"
-    # Make the config world-readable so the pinned zallet container uid (1000)
-    # can read it regardless of the operator's host uid/umask. These TOMLs are
-    # not secret; the age key is handled separately in ensure_identity.
-    chmod 644 "$active"
     log "==> $NETWORK/$file: created from .example template."
+}
+
+ensure_toml_readable() {
+    local file="$1"
+    local config="$CONFIG_DIR/$file"
+
+    if [ ! -f "$config" ]; then
+        log "FAIL: missing config $config" >&2
+        exit 1
+    fi
+
+    chmod 644 "$config"
+    log "==> $NETWORK/$file: ensured readable by service containers."
+}
+
+grant_zallet_uid_read() {
+    local file="$1"
+
+    # Zallet runs as uid 1000 (distroless image, no runtime chown), so it can
+    # only read bind-mounted secrets if uid 1000 has read access. When the
+    # operator's host uid is already 1000 the 0600 file is readable as-is;
+    # otherwise grant uid 1000 read via POSIX ACL without widening to others.
+    if [ "$(id -u)" -eq "$ZALLET_UID" ]; then
+        return
+    fi
+
+    if command -v setfacl >/dev/null 2>&1 && setfacl -m "u:${ZALLET_UID}:r" "$file"; then
+        return
+    fi
+
+    log "FAIL: cannot grant uid $ZALLET_UID read on $file (host uid $(id -u) != $ZALLET_UID)." >&2
+    log "      zallet (uid $ZALLET_UID) could not read the file and would fail to start." >&2
+    log "      Install the 'acl' package and run: setfacl -m u:${ZALLET_UID}:r $file" >&2
+    log "      (or 'chmod 644 $file' to allow all local users)." >&2
+    exit 1
 }
 
 ensure_identity() {
@@ -60,33 +92,18 @@ ensure_identity() {
 
     if [ -f "$identity" ]; then
         log "==> $NETWORK/zallet_identity.txt: present."
-        return
-    fi
-
-    if ! command -v rage-keygen >/dev/null 2>&1; then
+    elif ! command -v rage-keygen >/dev/null 2>&1; then
         log "FAIL: rage-keygen not found." >&2
         log "      Install rage from https://github.com/str4d/rage/releases" >&2
         exit 1
+    else
+        rage-keygen -o "$identity"
+        log "==> $NETWORK/zallet_identity.txt: generated."
     fi
 
-    rage-keygen -o "$identity"
     chmod 600 "$identity"
-    # Zallet runs as uid 1000 (distroless image, no runtime chown), so it can
-    # only read the age key if uid 1000 has read access. When the operator's
-    # host uid is already 1000 the 0600 file is readable as-is; otherwise grant
-    # uid 1000 read via a POSIX ACL without widening the key to other users.
-    if [ "$(id -u)" -ne 1000 ]; then
-        if command -v setfacl >/dev/null 2>&1 && setfacl -m u:1000:r "$identity"; then
-            : # uid 1000 granted read via ACL
-        else
-            log "FAIL: cannot grant uid 1000 read on $identity (host uid $(id -u) != 1000)." >&2
-            log "      zallet (uid 1000) could not read the age key and would fail to start." >&2
-            log "      Install the 'acl' package and run: setfacl -m u:1000:r $identity" >&2
-            log "      (or 'chmod 644 $identity' to allow all local users)." >&2
-            exit 1
-        fi
-    fi
-    log "==> $NETWORK/zallet_identity.txt: generated."
+    grant_zallet_uid_read "$identity"
+    log "==> $NETWORK/zallet_identity.txt: ensured readable by zallet uid $ZALLET_UID."
 }
 
 mkdir -p "$CONFIG_DIR"
@@ -97,6 +114,11 @@ copy_template zallet.toml
 # Mainnet and testnet use Zebra's built-in network defaults.
 if [ "$NETWORK" = "regtest" ]; then
     copy_template zebra.toml
+fi
+ensure_toml_readable zaino.toml
+ensure_toml_readable zallet.toml
+if [ "$NETWORK" = "regtest" ]; then
+    ensure_toml_readable zebra.toml
 fi
 ensure_identity
 

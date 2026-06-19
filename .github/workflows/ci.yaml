@@ -59,6 +59,91 @@ jobs:
       - name: Validate contract inventory parity (env vars across compose and .env.example)
         run: ./scripts/validate-contract-parity.py
 
+  zallet-config-permission-smoke:
+    name: Zallet config permission smoke
+    runs-on: ubuntu-latest
+    needs: contract-validation
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install ACL tooling
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq acl
+
+      - name: Provide fake rage-keygen
+        # This job validates z3's permission contract, not rage itself.
+        run: |
+          mkdir -p "$RUNNER_TEMP/fake-bin"
+          cat > "$RUNNER_TEMP/fake-bin/rage-keygen" <<'EOF'
+          #!/usr/bin/env sh
+          set -eu
+          if [ "$#" -ne 2 ] || [ "$1" != "-o" ]; then
+            echo "usage: rage-keygen -o <path>" >&2
+            exit 2
+          fi
+          printf '%s\n' '# dummy identity for CI permission smoke' > "$2"
+          EOF
+          chmod +x "$RUNNER_TEMP/fake-bin/rage-keygen"
+          echo "$RUNNER_TEMP/fake-bin" >> "$GITHUB_PATH"
+
+      - name: Fresh setup files are readable by Zallet's compose user
+        run: |
+          set -euo pipefail
+          umask 077
+          ./scripts/setup-network.sh mainnet
+
+          test "$(stat -c '%a' config/mainnet/zaino.toml)" = "644"
+          test "$(stat -c '%a' config/mainnet/zallet.toml)" = "644"
+          test "$(stat -c '%a' config/mainnet/zallet_identity.txt)" = "600"
+          getfacl -cpn config/mainnet/zallet_identity.txt | grep -q '^user:1000:r--$'
+
+          ZALLET_USER="$(docker compose --env-file .env.mainnet config --format json \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
+          docker run --rm --user "$ZALLET_USER" -v "$PWD/config/mainnet":/c:ro alpine \
+            sh -c 'cat /c/zallet.toml >/dev/null && cat /c/zallet_identity.txt >/dev/null'
+
+      - name: Existing restrictive files are repaired by setup-network.sh
+        run: |
+          set -euo pipefail
+          umask 077
+          ./scripts/setup-network.sh testnet
+
+          chmod 600 config/testnet/zaino.toml config/testnet/zallet.toml config/testnet/zallet_identity.txt
+          setfacl -b config/testnet/zallet_identity.txt
+
+          ./scripts/setup-network.sh testnet
+          test "$(stat -c '%a' config/testnet/zaino.toml)" = "644"
+          test "$(stat -c '%a' config/testnet/zallet.toml)" = "644"
+          test "$(stat -c '%a' config/testnet/zallet_identity.txt)" = "600"
+          getfacl -cpn config/testnet/zallet_identity.txt | grep -q '^user:1000:r--$'
+
+          ZALLET_USER="$(docker compose --env-file .env.testnet config --format json \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
+          docker run --rm --user "$ZALLET_USER" -v "$PWD/config/testnet":/c:ro alpine \
+            sh -c 'cat /c/zallet.toml >/dev/null && cat /c/zallet_identity.txt >/dev/null'
+
+      - name: Regtest pwhash rewrite keeps files readable
+        run: |
+          set -euo pipefail
+          umask 077
+          ./scripts/regtest-init.sh --prepare-only
+
+          if grep -q '__GENERATED_BY_INIT_SH__' config/regtest/zallet.toml; then
+            echo "regtest zallet.toml still has the pwhash placeholder" >&2
+            exit 1
+          fi
+          test "$(stat -c '%a' config/regtest/zaino.toml)" = "644"
+          test "$(stat -c '%a' config/regtest/zallet.toml)" = "644"
+          test "$(stat -c '%a' config/regtest/zebra.toml)" = "644"
+          test "$(stat -c '%a' config/regtest/zallet_identity.txt)" = "600"
+          getfacl -cpn config/regtest/zallet_identity.txt | grep -q '^user:1000:r--$'
+
+          ZALLET_USER="$(docker compose --env-file .env.regtest config --format json \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
+          docker run --rm --user "$ZALLET_USER" -v "$PWD/config/regtest":/c:ro alpine \
+            sh -c 'cat /c/zallet.toml >/dev/null && cat /c/zallet_identity.txt >/dev/null'
+
   regtest-smoke:
     name: Regtest smoke test
     runs-on: ubuntu-latest
@@ -74,26 +159,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Stage local files (live TOMLs from templates, identity)
-        # Mirrors the file setup step without requiring rage in CI. The sed
-        # command patches the live gitignored copy, not the tracked template.
+      - name: Stage regtest files with setup scripts
         run: |
-          cp config/regtest/zallet.toml.example config/regtest/zallet.toml
-          cp config/regtest/zaino.toml.example config/regtest/zaino.toml
-          cp config/regtest/zebra.toml.example config/regtest/zebra.toml
-          echo "# dummy identity for CI" > config/regtest/zallet_identity.txt
-          SALT=$(openssl rand -hex 16)
-          HASH=$(printf 'zebra' | openssl dgst -sha256 -mac HMAC -macopt "key:$SALT" | awk '{print $NF}')
-          sed -i "s|__GENERATED_BY_INIT_SH__|${SALT}\$${HASH}|" config/regtest/zallet.toml
-          # Mirror the permission end-state of setup-network.sh / regtest-init.sh
-          # so the readability assertion below exercises the real contract:
-          # non-secret TOMLs world-readable, the age key 0600 + ACL for uid 1000.
-          # Install acl explicitly so the setfacl call (and the ACL the uid-1000
-          # readability assertion depends on) does not rely on the runner image.
           sudo apt-get update -qq && sudo apt-get install -y -qq acl
-          chmod 644 config/regtest/zallet.toml config/regtest/zaino.toml config/regtest/zebra.toml
-          chmod 600 config/regtest/zallet_identity.txt
-          setfacl -m u:1000:r config/regtest/zallet_identity.txt
+          mkdir -p "$RUNNER_TEMP/fake-bin"
+          cat > "$RUNNER_TEMP/fake-bin/rage-keygen" <<'EOF'
+          #!/usr/bin/env sh
+          set -eu
+          if [ "$#" -ne 2 ] || [ "$1" != "-o" ]; then
+            echo "usage: rage-keygen -o <path>" >&2
+            exit 2
+          fi
+          printf '%s\n' '# dummy identity for CI regtest smoke' > "$2"
+          EOF
+          chmod +x "$RUNNER_TEMP/fake-bin/rage-keygen"
+          umask 077
+          PATH="$RUNNER_TEMP/fake-bin:$PATH" ./scripts/regtest-init.sh --prepare-only
 
       - name: Start Zebra (regtest)
         run: |
@@ -145,14 +226,15 @@ jobs:
       - name: Verify Zallet accepts compose command
         run: docker compose --env-file .env.regtest run --rm --no-deps zallet --help
 
-      - name: Assert Zallet config is readable by the container uid (1000)
-        # Zallet runs as uid 1000 (distroless image, no runtime chown). Guards
-        # the config-readability contract: zallet.toml is world-readable and the
-        # age key is reachable by uid 1000 via ACL. Catches a regression of the
-        # mktemp-0600 mode leaking back onto the rewritten config.
+      - name: Assert Zallet config is readable by the compose user
+        # Guards the config-readability contract at the same UID/GID declared
+        # for the zallet service. Catches script regressions and compose user
+        # changes that would make bind-mounted config unreadable.
         run: |
-          docker run --rm --user 1000:1000 -v "$PWD/config/regtest":/c:ro alpine \
-            sh -c 'cat /c/zallet.toml >/dev/null && cat /c/zallet_identity.txt >/dev/null && echo "uid 1000 read OK"'
+          ZALLET_USER="$(docker compose --env-file .env.regtest config --format json \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
+          docker run --rm --user "$ZALLET_USER" -v "$PWD/config/regtest":/c:ro alpine \
+            sh -c 'cat /c/zallet.toml >/dev/null && cat /c/zallet_identity.txt >/dev/null && echo "compose user read OK"'
 
       - name: Verify the cookie volume is attachable
         # Regtest disables cookie auth (ZEBRA_RPC__ENABLE_COOKIE_AUTH=false) so
