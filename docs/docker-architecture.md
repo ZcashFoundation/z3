@@ -174,7 +174,7 @@ Zebra's Docker entrypoint starts as root, runs `mkdir` and `chown` to set up mou
 cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
 ```
 
-Zaino and Zallet run as non-root from the start and work with `cap_drop: [ALL]` alone.
+Zallet is the only core service pinned directly to a non-root user in Compose (`user: "1000:1000"`). Zaino is not pinned with a Compose `user:` override and has the setup capabilities declared in `docker-compose.yml`, so Zallet's bind-mounted config has the strictest host-file readability requirement.
 
 ## Healthchecks
 
@@ -267,6 +267,12 @@ Zebra writes the RPC cookie at `/var/run/auth/.cookie` with mode `0600` owned by
 The base compose includes a small `cookie-permissions` sidecar (`alpine:3` with `cap_add: [FOWNER]`) that polls every 5 seconds and chmods the cookie to `0644` once it appears. The cookie volume is already the consumer attachment surface, so loosening the file mode within that volume does not change the security boundary; anyone with access to mount the volume already has access to the cookie.
 
 Zaino and Zallet depend on the sidecar's healthcheck, so targeted starts such as `docker compose up -d zaino` also start the sidecar and wait until the cookie is readable. On mainnet and testnet the healthcheck waits for `/var/run/auth/.cookie`; on regtest it exits successfully because cookie auth is disabled and username/password auth is used instead.
+
+## Zallet config readability and operator uid
+
+Zallet uses a distroless image with no shell, entrypoint script, or Linux capabilities, so the base compose pins it with `user: "1000:1000"` and it runs as that uid from PID 1. Unlike Zebra, which starts with an entrypoint that can prepare filesystem state before dropping privileges, Zallet can only read its two bind-mounted host config files — `config/<network>/zallet.toml` → `/etc/zallet/zallet.toml` and `config/<network>/zallet_identity.txt` → `/etc/zallet/identity.txt` — if they are readable by uid 1000.
+
+The same "no UID coordination required" property that the cookie sidecar provides applies here: the setup scripts make generated TOML config readable by service containers regardless of the operator's host uid, and they re-apply that permission contract on every run. `scripts/setup-network.sh` keeps generated TOMLs mode `0644`; `scripts/regtest-init.sh` restores `0644` after its `mktemp`+`mv` pwhash rewrite (which would otherwise leave `zallet.toml` mode `0600`). The age key `zallet_identity.txt` is a long-lived wallet secret, so instead of widening it to all local users it keeps group and other access closed while granting read to uid 1000 only via POSIX ACL (`setfacl -m u:1000:r`). The ACL only matters when the operator's host uid is not 1000 — when it is 1000 the owner-only key is already owned by, and readable as, uid 1000, so `setup-network.sh` skips the ACL. When the host uid is not 1000, `setfacl` (the `acl` package on Linux, with an ACL-capable filesystem such as ext4/xfs) is required: if it is unavailable or fails, the script stops with instructions rather than letting Zallet crash at startup, and the operator installs `acl` (or falls back to `chmod 644` on the identity file to allow all local users). CI runs these setup paths with restrictive host modes, derives Zallet's UID/GID from rendered Compose, verifies the ACL entries, and verifies a container running as that user can read both bind-mounted Zallet files.
 
 ## Regtest overlay constraints
 

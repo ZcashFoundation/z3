@@ -6,13 +6,28 @@
 # activation blocks, and generate the wallet mnemonic.
 #
 # Run this once before starting the regtest stack. Safe to re-run.
+# Use --prepare-only in CI to exercise file setup and pwhash generation without
+# starting Docker services.
 #
 # Requirements:
-#   - Docker with Docker Compose v2.24.4+
+#   - Docker with Docker Compose v2.24.4+ (unless using --prepare-only)
 #   - rage-keygen, openssl (used by setup-network.sh)
 #   - No running z3-regtest-* containers
 
 set -euo pipefail
+
+PREPARE_ONLY=0
+case "${1:-}" in
+    --prepare-only)
+        PREPARE_ONLY=1
+        ;;
+    "")
+        ;;
+    *)
+        echo "Usage: $0 [--prepare-only]" >&2
+        exit 1
+        ;;
+esac
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -32,6 +47,13 @@ CONFIG_DIR="${Z3_CONFIG_DIR:-./config/regtest}"
 
 log() {
     printf '%s\n' "$*"
+}
+
+ensure_zallet_config_readable() {
+    local config_path="$1"
+
+    chmod 644 "$config_path"
+    log "==> Ensured ${CONFIG_DIR}/zallet.toml is readable by zallet uid 1000"
 }
 
 require_compose_v2() {
@@ -88,6 +110,7 @@ update_zallet_rpc_pwhash() {
     fi
 
     if ! grep -q "pwhash = \"${placeholder}\"" "$config_path"; then
+        ensure_zallet_config_readable "$config_path"
         log "==> Zallet RPC pwhash already generated, skipping."
         return
     fi
@@ -107,9 +130,22 @@ update_zallet_rpc_pwhash() {
 
     sed -E "s|^pwhash = \".*\"$|pwhash = \"${pwhash}\"|" "$config_path" > "$tmp"
     mv "$tmp" "$config_path"
+    # mktemp creates the temp file mode 0600 and mv carries that mode onto the
+    # config; restore world-read so the zallet container (uid 1000) can read it.
+    ensure_zallet_config_readable "$config_path"
 
     log "==> Generated zallet RPC pwhash in ${CONFIG_DIR}/zallet.toml"
 }
+
+cd "$REPO_ROOT"
+
+"$SCRIPT_DIR/setup-network.sh" regtest
+update_zallet_rpc_pwhash
+
+if [ "$PREPARE_ONLY" -eq 1 ]; then
+    log "==> Regtest files prepared; skipping Docker startup (--prepare-only)."
+    exit 0
+fi
 
 require_compose_v2
 
@@ -118,11 +154,6 @@ if ! docker info > /dev/null 2>&1; then
     DOCKER="sudo -E docker"
     COMPOSE="sudo -E $COMPOSE"
 fi
-
-cd "$REPO_ROOT"
-
-"$SCRIPT_DIR/setup-network.sh" regtest
-update_zallet_rpc_pwhash
 
 # Clean up any leftover containers from previous runs.
 $COMPOSE down --remove-orphans 2>/dev/null || true
