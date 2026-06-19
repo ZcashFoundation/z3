@@ -95,8 +95,11 @@ jobs:
 
           test "$(stat -c '%a' config/mainnet/zaino.toml)" = "644"
           test "$(stat -c '%a' config/mainnet/zallet.toml)" = "644"
-          test "$(stat -c '%a' config/mainnet/zallet_identity.txt)" = "600"
-          getfacl -cpn config/mainnet/zallet_identity.txt | grep -q '^user:1000:r--$'
+          getfacl -cpn config/mainnet/zallet_identity.txt > /tmp/mainnet-zallet-identity.acl
+          grep -q '^user::rw-$' /tmp/mainnet-zallet-identity.acl
+          grep -q '^user:1000:r--$' /tmp/mainnet-zallet-identity.acl
+          grep -q '^group::---$' /tmp/mainnet-zallet-identity.acl
+          grep -q '^other::---$' /tmp/mainnet-zallet-identity.acl
 
           ZALLET_USER="$(docker compose --env-file .env.mainnet config --format json \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
@@ -115,8 +118,11 @@ jobs:
           ./scripts/setup-network.sh testnet
           test "$(stat -c '%a' config/testnet/zaino.toml)" = "644"
           test "$(stat -c '%a' config/testnet/zallet.toml)" = "644"
-          test "$(stat -c '%a' config/testnet/zallet_identity.txt)" = "600"
-          getfacl -cpn config/testnet/zallet_identity.txt | grep -q '^user:1000:r--$'
+          getfacl -cpn config/testnet/zallet_identity.txt > /tmp/testnet-zallet-identity.acl
+          grep -q '^user::rw-$' /tmp/testnet-zallet-identity.acl
+          grep -q '^user:1000:r--$' /tmp/testnet-zallet-identity.acl
+          grep -q '^group::---$' /tmp/testnet-zallet-identity.acl
+          grep -q '^other::---$' /tmp/testnet-zallet-identity.acl
 
           ZALLET_USER="$(docker compose --env-file .env.testnet config --format json \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
@@ -136,8 +142,11 @@ jobs:
           test "$(stat -c '%a' config/regtest/zaino.toml)" = "644"
           test "$(stat -c '%a' config/regtest/zallet.toml)" = "644"
           test "$(stat -c '%a' config/regtest/zebra.toml)" = "644"
-          test "$(stat -c '%a' config/regtest/zallet_identity.txt)" = "600"
-          getfacl -cpn config/regtest/zallet_identity.txt | grep -q '^user:1000:r--$'
+          getfacl -cpn config/regtest/zallet_identity.txt > /tmp/regtest-zallet-identity.acl
+          grep -q '^user::rw-$' /tmp/regtest-zallet-identity.acl
+          grep -q '^user:1000:r--$' /tmp/regtest-zallet-identity.acl
+          grep -q '^group::---$' /tmp/regtest-zallet-identity.acl
+          grep -q '^other::---$' /tmp/regtest-zallet-identity.acl
 
           ZALLET_USER="$(docker compose --env-file .env.regtest config --format json \
             | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
