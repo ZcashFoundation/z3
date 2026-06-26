@@ -25,7 +25,7 @@ regtest_nuparams = [
 [external]
 
 [features]
-as_of_version = "0.1.0-alpha.3"
+as_of_version = "0.1.0-alpha.4"
 
 [features.deprecated]
 
@@ -37,7 +37,7 @@ validator_user = "zebra"
 validator_password = "zebra"
 
 [keystore]
-encryption_identity = "/etc/zallet/identity.txt"
+encryption_identity = "/var/lib/zallet/identity.txt"
 
 [note_management]
 

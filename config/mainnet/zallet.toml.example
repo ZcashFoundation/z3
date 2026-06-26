@@ -22,7 +22,7 @@ network = "main"
 # External settings: defaults.
 
 [features]
-as_of_version = "0.1.0-alpha.3"
+as_of_version = "0.1.0-alpha.4"
 
 [features.deprecated]
 
@@ -35,9 +35,9 @@ validator_address = "zebra:8232"
 validator_cookie_path = "/var/run/auth/.cookie"
 
 [keystore]
-# Age encryption identity file, mounted by docker-compose from
-# ${Z3_CONFIG_DIR}/zallet_identity.txt.
-encryption_identity = "/etc/zallet/identity.txt"
+# Age encryption identity, generated in-container into the Zallet data volume
+# by `zallet generate-encryption-identity`.
+encryption_identity = "/var/lib/zallet/identity.txt"
 
 [note_management]
 # Note management: defaults.

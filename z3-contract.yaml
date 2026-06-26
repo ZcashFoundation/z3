@@ -163,7 +163,7 @@ env_vars:
   network:
     - {name: COMPOSE_PROJECT_NAME, namespace: compose, description: "Compose project name; selects the per-network instance."}
     - {name: Z3_NETWORK, namespace: z3, values: [Mainnet, Testnet, Regtest], description: "Network selector. PascalCase per Zebra's serde."}
-    - {name: Z3_CONFIG_DIR, namespace: z3, description: "Per-network config dir (zallet.toml, zaino.toml, zallet_identity.txt)."}
+    - {name: Z3_CONFIG_DIR, namespace: z3, description: "Per-network config dir (zallet.toml, zaino.toml)."}
 
   images:
     # Image-pin defaults live in docker-compose.yml as ${VAR:-tag} fallbacks.
@@ -173,7 +173,7 @@ env_vars:
     - {name: Z3_ZAINO_IMAGE, namespace: z3}
     - {name: Z3_ZALLET_IMAGE, namespace: z3}
     - {name: Z3_ZEBRA_BUILD_FEATURES, namespace: z3, description: "Build arg when building Zebra from source."}
-    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra 5.x is multi-arch (no pin needed); Zaino and Zallet publish amd64 only and are pinned in compose. Override to build Zaino/Zallet native arm64 from source (docker-compose.build.yml)."}
+    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra 5.x and Zallet are multi-arch (no pin needed); Zaino publishes amd64 only and is pinned in compose. Override to build Zaino native arm64 from source (docker-compose.build.yml)."}
 
   ports:
     # Host ports (z3 controls the per-network port matrix; testnet/regtest offset).
@@ -251,4 +251,4 @@ profiles:
 image_platforms:
   zebra:  [linux/amd64, linux/arm64]
   zaino:  [linux/amd64]
-  zallet: [linux/amd64]
+  zallet: [linux/amd64, linux/arm64]
