@@ -10,7 +10,6 @@ Two kinds of people use Z3, and this README is split for them:
 ## Prerequisites
 
 - [Docker Engine](https://docs.docker.com/engine/install/) with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
-- [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys (`brew install rage` on macOS, or download a release)
 - Git, to clone this repository
 - `openssl`, only for regtest (it hashes the regtest wallet RPC password); pre-installed on macOS and most Linux distros
 
@@ -79,7 +78,7 @@ Each network keeps its chain state in a Docker named volume called `z3-<network>
 
 - **Find the path:** `docker volume inspect z3-mainnet-chain -f '{{.Mountpoint}}'`
 - **Put it on another disk:** set `Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state` and run `./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state` before the first start.
-- **Back up the wallet:** the only data worth backing up is the wallet, and it needs **two** pieces kept together: the `z3-<network>-zallet` volume **and** `config/<network>/zallet_identity.txt` (the age key the wallet database is encrypted with). One without the other cannot be restored. Chain state is re-syncable and the cookie is regenerated, so neither needs backup.
+- **Back up the wallet:** the only data worth backing up is the `z3-<network>-zallet` volume. It holds both the encrypted wallet database and the age identity that decrypts it, so the volume is self-contained. Chain state is re-syncable and the cookie is regenerated, so neither needs backup.
 - **Stop vs wipe:** `docker compose --env-file .env.<network> down` stops the stack and keeps every volume; adding `-v` (`down -v`) deletes them, which means a full re-sync.
 
 The volume table and bind-mount details are in the [Reference](#reference) section.
@@ -89,7 +88,7 @@ The volume table and bind-mount details are in the [Reference](#reference) secti
 Z3 ships production-shaped defaults, but a few choices are yours to make before running mainnet for real:
 
 - **Pick where the chain lives.** The default named volume sits under `/var/lib/docker` (~300 GB on mainnet). To use a dedicated disk, set `Z3_CHAIN_DATA_PATH` and run `fix-permissions.sh` before the first start (see [Where your data lives](#where-your-data-lives)).
-- **Plan the wallet backup.** Keep the `z3-<network>-zallet` volume and `config/<network>/zallet_identity.txt` together; nothing else needs backup.
+- **Plan the wallet backup.** Back up the `z3-<network>-zallet` volume; it holds the wallet and its encryption identity, and nothing else needs backup.
 - **Set a log rotation policy.** Z3 does not pin a logging driver, so containers use your Docker daemon default. Add size limits in `/etc/docker/daemon.json` (see the [FAQ](docs/faq.md)); otherwise logs grow unbounded on a 24/7 node.
 - **Decide p2p exposure.** Mainnet and testnet publish Zebra's p2p port for inbound peers. Behind NAT or a firewall, set `ZEBRA_NETWORK__EXTERNAL_ADDR` to the address peers should dial. Regtest is peerless and publishes no p2p.
 - **Tune the host network (Linux).** On a busy mainnet node, default kernel TCP buffer and connection-backlog limits can cap Zebra's peer throughput. See [Zebra's TCP tuning notes](https://github.com/ZcashFoundation/zebra/pull/10513) for the `sysctl` values worth raising.
@@ -247,9 +246,8 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml build
 
 - Copies `config/<network>/zallet.toml.example` -> `config/<network>/zallet.toml` (local, gitignored)
 - Copies `config/<network>/zaino.toml.example` → `config/<network>/zaino.toml` (same)
-- Generates `config/<network>/zallet_identity.txt` via `rage-keygen` if missing
 
-Subsequent runs leave existing file contents untouched, but still reconcile generated TOML modes and the Zallet identity permissions described below. Back up `zallet_identity.txt` together with the `z3-<network>-zallet` volume; without the identity file the wallet database cannot be decrypted.
+Subsequent runs leave existing file contents untouched, but still reconcile the generated TOML modes described below. The Zallet encryption identity is no longer a host file: it is generated in-container into the `z3-<network>-zallet` volume by `zallet generate-encryption-identity` (see [the wallet setup FAQ](docs/faq.md)). Back up that volume; it holds both the wallet database and the identity that decrypts it.
 
 ### Per-network Zallet config
 
@@ -358,7 +356,7 @@ Fix permissions before starting:
 
 Zebra, Zaino, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
 
-Operators whose host uid is not `1000` do **not** need to coordinate uids for Zallet's bind-mounted config. Zallet runs as uid 1000 (distroless image), and `setup-network.sh` makes generated TOMLs readable by service containers (`0644`) and grants the age key `zallet_identity.txt` read access for uid 1000 via a POSIX ACL (`setfacl -m u:1000:r`) while keeping group and other access closed. The script re-applies this permission contract on every run, including existing files. When your host uid is already `1000` the owner-only key is readable as-is and no ACL is needed; otherwise install the `acl` package on Linux. If your host uid is not `1000` and `setfacl` is unavailable, `setup-network.sh` stops with instructions rather than leaving Zallet to crash at startup — install `acl` and run `setfacl -m u:1000:r` on the identity file (or `chmod 644` it to allow all local users).
+Operators whose host uid is not `1000` do **not** need to coordinate uids for Zallet's bind-mounted config. Zallet runs as uid 1000 (distroless image), and `setup-network.sh` makes the generated TOMLs readable by service containers (`0644`), re-applying that mode on every run including existing files. The encryption identity needs no such handling: it lives in the `z3-<network>-zallet` volume, created by uid 1000 in-container, so Zallet reads it directly.
 
 </details>
 

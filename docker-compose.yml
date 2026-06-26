@@ -153,8 +153,8 @@ services:
       start_interval: 5s
 
   zallet:
-    image: ${Z3_ZALLET_IMAGE:-electriccoinco/zallet:v0.1.0-alpha.3}
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-alpha.4}
+    platform: ${DOCKER_PLATFORM:-}
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
@@ -171,7 +171,6 @@ services:
       - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/lib/zallet
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
       - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet.toml:/etc/zallet/zallet.toml:ro
-      - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet_identity.txt:/etc/zallet/identity.txt:ro
     ports:
       - "${Z3_ZALLET_HOST_RPC_PORT:-28232}:28232"
     # No healthcheck: the distroless image has no shell or curl.

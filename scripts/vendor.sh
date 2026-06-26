@@ -21,7 +21,7 @@ declare -A URL=(
 declare -A REF=(
   [zebra]="v5.0.0"
   [zaino]="0.4.0-rc.2"
-  [zallet]="v0.1.0-alpha.3"
+  [zallet]="v0.1.0-alpha.4"
 )
 
 vendor_one() {

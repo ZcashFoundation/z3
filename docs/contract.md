@@ -122,7 +122,6 @@ These files are created locally by `scripts/setup-network.sh <network>` and edit
 | `docker-compose.<network>.override.yml` | Local user (optional) | Per-host testnet/regtest overrides. **Not auto-loaded;** pass with `-f` or append to `COMPOSE_FILE` explicitly. |
 | `config/<network>/zallet.toml` | `setup-network.sh` (cp from `.example`) | Active Zallet config. Edit to taste. |
 | `config/<network>/zaino.toml` | `setup-network.sh` (cp from `.example`) | Active Zaino config. Edit to taste. |
-| `config/<network>/zallet_identity.txt` | `setup-network.sh` (`rage-keygen`) | Per-operator wallet encryption key. Back this up. |
 
 After `git pull`, diff your live `.toml` against the refreshed `.example`; apply any desired changes by hand:
 
