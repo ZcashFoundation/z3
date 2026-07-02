@@ -150,7 +150,7 @@ graph LR
     Zaino -->|gRPC| LightClients["Light wallet<br/>clients"]
 ```
 
-**Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service.
+**Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary.
 
 Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet).
 
@@ -247,7 +247,7 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml build
 - Copies `config/<network>/zallet.toml.example` -> `config/<network>/zallet.toml` (local, gitignored)
 - Copies `config/<network>/zaino.toml.example` → `config/<network>/zaino.toml` (same)
 
-Subsequent runs leave existing file contents untouched, but still reconcile the generated TOML modes described below. The Zallet encryption identity is no longer a host file: it is generated in-container into the `z3-<network>-zallet` volume by `zallet generate-encryption-identity` (see [the wallet setup FAQ](docs/faq.md)). Back up that volume; it holds both the wallet database and the identity that decrypts it.
+Subsequent runs leave existing file contents untouched, but still reconcile the generated TOML modes described below. The Zallet encryption identity is no longer a host file: it is generated in-container into the `z3-<network>-zallet` volume by `zallet-zaino generate-encryption-identity` (see [the wallet setup FAQ](docs/faq.md)). Back up that volume; it holds both the wallet database and the identity that decrypts it.
 
 ### Per-network Zallet config
 

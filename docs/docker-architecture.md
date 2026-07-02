@@ -127,7 +127,7 @@ A related tag, `!reset`, clears an attribute to its default value. This stack re
 
 ### Zallet config files
 
-Zallet's `[indexer]` block hardcodes the validator address it connects to (Zebra's JSON-RPC). Because the JSON-RPC port differs per network (Mainnet 8232, Testnet 18232, Regtest 18232), Z3 ships one Zallet config per network:
+Zallet's `[indexer]` block hardcodes the validator address it connects to (Zebra's JSON-RPC). Because the JSON-RPC port differs per network (Mainnet 8232, Testnet 18232, Regtest 18232), Z3 ships one Zallet config per network. The upstream image contains multiple wallet binaries; z3 selects `/usr/local/bin/zallet-zaino` so this config uses the RPC-backed Zaino path rather than the zebra-state backend.
 
 ```
 config/mainnet/zallet.toml      validator_address = "zebra:8232"

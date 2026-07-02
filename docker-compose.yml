@@ -154,11 +154,14 @@ services:
 
   zallet:
     image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-alpha.4}
-    platform: ${DOCKER_PLATFORM:-}
+    # The alpha.4 image includes multiple binaries. z3 uses the Zaino-backed
+    # wallet binary; it is currently published for amd64 only.
+    platform: ${DOCKER_PLATFORM:-linux/amd64}
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common
     user: "1000:1000"
+    entrypoint: ["/usr/local/bin/zallet-zaino"]
     command: ["--datadir", "/var/lib/zallet", "--config", "/etc/zallet/zallet.toml", "start"]
     depends_on:
       zebra:

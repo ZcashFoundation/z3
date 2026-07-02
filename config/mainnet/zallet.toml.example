@@ -4,7 +4,7 @@
 # JSON-RPC endpoint. It does NOT use the standalone Zaino service (which
 # serves gRPC to external light-wallet clients).
 #
-# For full configuration options: `zallet example-config`.
+# For full configuration options: `zallet-zaino example-config`.
 
 [builder]
 # Transaction builder: defaults.
@@ -36,7 +36,7 @@ validator_cookie_path = "/var/run/auth/.cookie"
 
 [keystore]
 # Age encryption identity, generated in-container into the Zallet data volume
-# by `zallet generate-encryption-identity`.
+# by `zallet-zaino generate-encryption-identity`.
 encryption_identity = "/var/lib/zallet/identity.txt"
 
 [note_management]
