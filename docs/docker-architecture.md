@@ -242,7 +242,7 @@ All service images are overridable. Compose references each image as `${Z3_<SERV
 - Use a private registry mirror in air-gapped environments.
 - Run CI with custom-built images via shell variables.
 
-Tags are pinned, never floating (`:latest`). On a consensus-critical node platform a silent major bump on the next `pull` or recreate could fork the operator off the network, so upgrades are deliberate: bump the inline default in a reviewed change, set `Z3_<SERVICE>_IMAGE` to move a single service, or let Renovate (`renovate.json`) raise an auditable bump PR. Dependabot stays scoped to GitHub Actions because it cannot parse the `${VAR:-tag}` default form.
+Tracked defaults are pinned, never floating (`:latest`). On a consensus-critical node platform a silent major bump on the next `pull` or recreate could fork the operator off the network, so default upgrades are deliberate: bump the inline default in a reviewed change, set `Z3_<SERVICE>_IMAGE` to move a single service, or let Renovate (`renovate.json`) raise an auditable bump PR. Operators who intentionally want a moving tag can set `Z3_<SERVICE>_IMAGE` locally; the [FAQ](faq.md#q-how-do-i-track-zebras-latest-image-without-updating-z3) shows the Zebra `latest` workflow. Dependabot stays scoped to GitHub Actions because it cannot parse the `${VAR:-tag}` default form.
 
 The `Z3_*_IMAGE` prefix marks these as part of the public contract; `z3-contract.yaml` lists the env-var schema in full.
 
