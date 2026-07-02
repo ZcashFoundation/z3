@@ -94,7 +94,7 @@ Z3 ships production-shaped defaults, but a few choices are yours to make before 
 - **Tune the host network (Linux).** On a busy mainnet node, default kernel TCP buffer and connection-backlog limits can cap Zebra's peer throughput. See [Zebra's TCP tuning notes](https://github.com/ZcashFoundation/zebra/pull/10513) for the `sysctl` values worth raising.
 - **Bound resources on a shared host.** No CPU or memory limits are set by default: right for a dedicated node, easy to get wrong on a shared box. Add `deploy.resources.limits` in an override file if you need them.
 
-Z3 ships safe defaults: pinned image versions (no surprise upgrades), non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Upgrades stay deliberate: bump the version pin in a reviewed change, or set `Z3_<SERVICE>_IMAGE`.
+Z3 ships safe defaults: pinned image versions (no surprise upgrades), non-root containers with Linux capabilities dropped, health checks that hold the wallet back until the node is synced, and automatic restart. Upgrades stay deliberate: bump the version pin in a reviewed change, or set `Z3_<SERVICE>_IMAGE`. Operators who prefer to track a moving image tag, such as `zfnd/zebra:latest`, can do that without editing the tracked stack; see the [FAQ](docs/faq.md#q-how-do-i-track-zebras-latest-image-without-updating-z3).
 
 ### Monitoring
 
@@ -306,7 +306,7 @@ z3 sets the service-internal vars (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SE
 Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
-# Pin a different image version
+# Pin a different image version, or use zfnd/zebra:latest to track Zebra releases
 Z3_ZEBRA_IMAGE=zfnd/zebra:5.0.0
 
 # Move chain state to an external SSD

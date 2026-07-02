@@ -96,6 +96,30 @@ Keep the limit generous on the service you want to win contention (Zebra), tight
 
 ---
 
+### Q: How do I track Zebra's latest image without updating Z3?
+
+Z3's checked-in defaults stay pinned so a `docker compose pull` cannot silently change the node version for every operator. If you prefer fewer Z3 stack updates and accept a moving Zebra image, set the image override in your operator-local `.env`:
+
+```bash
+Z3_ZEBRA_IMAGE=zfnd/zebra:latest
+```
+
+Then pull before recreating Zebra. Docker does not fetch a newer image just because the tag is named `latest`; run `pull` first or use `up --pull always`. When you use the documented `--env-file .env.<network>` commands, pass `.env` after the network file so the override is loaded:
+
+```bash
+docker compose --env-file .env.mainnet --env-file .env pull zebra
+docker compose --env-file .env.mainnet --env-file .env up -d zebra
+
+# Equivalent one-command form:
+docker compose --env-file .env.mainnet --env-file .env up -d --pull always zebra
+```
+
+For testnet or regtest, replace `.env.mainnet` with `.env.testnet` or `.env.regtest`. If you run mainnet without `--env-file`, Compose auto-loads `.env`, so `docker compose up -d --pull always zebra` is enough.
+
+The same override pattern works for other services through `Z3_ZAINO_IMAGE` and `Z3_ZALLET_IMAGE`, but do not switch those to a moving tag unless you have checked the tag keeps the variant and platform support Z3 expects.
+
+---
+
 ## For developers and testers
 
 ### Q: How do per-network compose overrides work?
