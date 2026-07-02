@@ -11,7 +11,7 @@
 #
 # Requirements:
 #   - Docker with Docker Compose v2.24.4+ (unless using --prepare-only)
-#   - rage-keygen, openssl (used by setup-network.sh)
+#   - openssl (for the Zallet RPC password hash)
 #   - No running z3-regtest-* containers
 
 set -euo pipefail
@@ -181,12 +181,14 @@ echo "   Blocks mined."
 # Compose names the Zallet data volume as ${COMPOSE_PROJECT_NAME}-zallet.
 ZALLET_VOLUME="${PROJECT}-zallet"
 
-echo "==> Running init-wallet-encryption..."
-# Remove stale lock file and wallet database if present (left by a previous
-# interrupted run). wallet.db will be recreated with the correct schema by
-# init-wallet-encryption; leaving a stale one causes a schema mismatch error.
+echo "==> Preparing the Zallet data volume..."
+# The distroless Zallet image runs as uid 1000 but ships no /var/lib/zallet
+# directory, so a freshly created named volume is root-owned and unwritable by
+# the container. Chown it to the Zallet uid, and clear any stale lock/database
+# left by an interrupted run (wallet.db is recreated by init-wallet-encryption;
+# a stale one causes a schema mismatch).
 $DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
-    sh -c 'rm -f /data/.lock /data/wallet.db'
+    sh -c 'chown 1000:1000 /data && rm -f /data/.lock /data/wallet.db'
 
 # generate-mnemonic stores an age-encrypted file; if one exists the full init
 # sequence has already completed successfully.
@@ -195,6 +197,15 @@ ALREADY_INIT=$($DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
 if [ "${ALREADY_INIT:-0}" -gt 0 ]; then
     echo "   Wallet already initialized, skipping."
 else
+    # generate-encryption-identity refuses to overwrite an existing identity,
+    # so skip it when a prior interrupted run already wrote one.
+    HAVE_IDENTITY=$($DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
+        sh -c 'test -f /data/identity.txt && echo 1 || echo 0')
+    if [ "${HAVE_IDENTITY:-0}" -eq 0 ]; then
+        echo "==> Running generate-encryption-identity..."
+        $COMPOSE run --rm --no-deps zallet --datadir /var/lib/zallet --config /etc/zallet/zallet.toml generate-encryption-identity
+    fi
+    echo "==> Running init-wallet-encryption..."
     $COMPOSE run --rm zallet --datadir /var/lib/zallet --config /etc/zallet/zallet.toml init-wallet-encryption
     echo "==> Running generate-mnemonic..."
     $COMPOSE run --rm zallet --datadir /var/lib/zallet --config /etc/zallet/zallet.toml generate-mnemonic

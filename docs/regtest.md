@@ -7,7 +7,6 @@ Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and
 ## Prerequisites
 
 - Docker with [Docker Compose](https://docs.docker.com/compose/install/) (v2.24.4+)
-- [rage](https://github.com/str4d/rage/releases) for generating Zallet encryption keys
 - For gRPC testing: [grpcurl](https://github.com/fullstorydev/grpcurl) and the Zaino proto files (`scripts/vendor.sh zaino`)
 
 ## First-time setup
@@ -21,7 +20,7 @@ From the repo root:
 This will:
 
 1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zallet.toml`) into live gitignored files
-2. Generate a Zallet encryption identity (if not already present)
+2. Generate the Zallet encryption identity in-container into the data volume (if not already present)
 3. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
 4. Start Zebra in regtest mode with the activation heights Zaino expects (Canopy at 1, NU5/Orchard at 2)
 5. Mine 2 blocks to activate Orchard

@@ -55,7 +55,6 @@ services:
     volumes: !override
       - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/lib/zallet
       - ${Z3_CONFIG_DIR:-./config/regtest}/zallet.toml:/etc/zallet/zallet.toml:ro
-      - ${Z3_CONFIG_DIR:-./config/regtest}/zallet_identity.txt:/etc/zallet/identity.txt:ro
 
   rpc-router:
     build:
