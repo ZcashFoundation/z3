@@ -28,7 +28,7 @@ The core principle: **`docker-compose.yml` is self-sufficient for mainnet**. Eve
 Every variable reference in `docker-compose.yml` includes a default value:
 
 ```yaml
-image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
+image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:latest}
 environment:
   ZEBRA_NETWORK__NETWORK: ${Z3_NETWORK:-Mainnet}
 volumes:
