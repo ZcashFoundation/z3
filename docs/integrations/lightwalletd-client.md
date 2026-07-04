@@ -2,9 +2,14 @@
 
 Your service is a wallet, block explorer, or scanner that speaks the lightwalletd `CompactTxStreamer` gRPC protocol. Z3's Zaino exposes that protocol as plaintext HTTP/2 (h2c) on the documented port. Terminate TLS at a reverse proxy if you expose Zaino beyond the host (see [Edge TLS in production](#edge-tls-in-production)).
 
+Zaino ships behind the `indexer` Compose profile, so every Z3 command in this guide must include `--profile indexer`. The default Z3 stack does not start Zaino.
+
+> [!NOTE]
+> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0` before bringing the stack up.
+
 ## Prerequisites
 
-- A running Z3 stack: `docker compose --env-file .env.<network> up -d` in the Z3 repo.
+- A running Z3 stack with the indexer profile: `docker compose --env-file .env.<network> --profile indexer up -d` in the Z3 repo.
 - A gRPC client for your language (Tonic for Rust, grpcio for Python, grpc-java, etc.) or the `grpcurl` CLI for ad-hoc calls.
 - The lightwalletd / Zaino `.proto` files. Fetch them into the Z3 repo with `scripts/vendor.sh zaino` (`vendor/zaino/zaino-proto/proto/service.proto`).
 

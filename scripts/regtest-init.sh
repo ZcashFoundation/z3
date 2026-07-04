@@ -42,7 +42,6 @@ set +a
 
 PROJECT="${COMPOSE_PROJECT_NAME:-z3-regtest}"
 ZEBRA_HOST_RPC="${Z3_ZEBRA_HOST_RPC_PORT:-29232}"
-ZAINO_HOST_GRPC="${Z3_ZAINO_HOST_GRPC_PORT:-28137}"
 CONFIG_DIR="${Z3_CONFIG_DIR:-./config/regtest}"
 
 log() {
@@ -155,8 +154,9 @@ if ! docker info > /dev/null 2>&1; then
     COMPOSE="sudo -E $COMPOSE"
 fi
 
-# Clean up any leftover containers from previous runs.
-$COMPOSE down --remove-orphans 2>/dev/null || true
+# Clean up any leftover containers from previous runs. --profile "*" includes
+# profile-gated services (indexer), which a plain down would leave running.
+$COMPOSE --profile "*" down --remove-orphans 2>/dev/null || true
 
 echo "==> Starting Zebra in regtest mode..."
 $COMPOSE up -d zebra
@@ -171,7 +171,7 @@ until curl -sf -X POST \
 done
 echo "   Zebra is ready."
 
-echo "==> Mining 2 blocks (NU5/Orchard activates at height 2 to match Zaino's regtest defaults)..."
+echo "==> Mining 2 blocks (config/regtest activates NU5/Orchard at height 2; zebra.toml and zallet.toml agree)..."
 curl -s -u zebra:zebra \
     -X POST -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"generate","params":[2],"id":1}' \
@@ -184,11 +184,10 @@ ZALLET_VOLUME="${PROJECT}-zallet"
 echo "==> Preparing the Zallet data volume..."
 # The distroless Zallet image runs as uid 1000 but ships no /var/lib/zallet
 # directory, so a freshly created named volume is root-owned and unwritable by
-# the container. Chown it to the Zallet uid, and clear any stale lock/database
-# left by an interrupted run (wallet.db is recreated by init-wallet-encryption;
-# a stale one causes a schema mismatch).
+# the container. Chown it to the Zallet uid, and clear any stale lockfile left
+# by an interrupted run.
 $DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
-    sh -c 'chown 1000:1000 /data && rm -f /data/.lock /data/wallet.db'
+    sh -c 'chown 1000:1000 /data && rm -f /data/.lock'
 
 # generate-mnemonic stores an age-encrypted file; if one exists the full init
 # sequence has already completed successfully.
@@ -197,6 +196,10 @@ ALREADY_INIT=$($DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
 if [ "${ALREADY_INIT:-0}" -gt 0 ]; then
     echo "   Wallet already initialized, skipping."
 else
+    # A database left by an interrupted init causes a schema mismatch in
+    # init-wallet-encryption. Clear it only while the wallet is uninitialized,
+    # so re-runs never delete an initialized wallet's database.
+    $DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox rm -f /data/wallet.db
     # generate-encryption-identity refuses to overwrite an existing identity,
     # so skip it when a prior interrupted run already wrote one.
     HAVE_IDENTITY=$($DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
@@ -212,10 +215,9 @@ else
 fi
 
 echo "==> Stopping Zebra (will be restarted by docker compose up -d)..."
-$COMPOSE down
+$COMPOSE --profile "*" down
 
 echo ""
 echo "Wallet initialized. Now run:"
 echo "   docker compose --env-file .env.regtest up -d"
 echo "   Router available at http://127.0.0.1:8181"
-echo "   Zaino gRPC available at 127.0.0.1:${ZAINO_HOST_GRPC}"

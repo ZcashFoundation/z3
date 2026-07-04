@@ -1,6 +1,6 @@
 # Z3 Regtest Environment
 
-Local end-to-end testing of the full Z3 stack (Zebra, Zaino, Zallet, and the rpc-router) in regtest mode.
+Local end-to-end testing of the Z3 stack (Zebra, Zallet, and the rpc-router, plus the optional Zaino indexer) in regtest mode.
 
 Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and `.env.regtest` for regtest-specific configuration. Volumes are isolated via `COMPOSE_PROJECT_NAME=z3-regtest`, so regtest data never conflicts with mainnet or testnet.
 
@@ -22,7 +22,7 @@ This will:
 1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zallet.toml`) into live gitignored files
 2. Generate the Zallet encryption identity in-container into the data volume (if not already present)
 3. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
-4. Start Zebra in regtest mode with the activation heights Zaino expects (Canopy at 1, NU5/Orchard at 2)
+4. Start Zebra in regtest mode with the activation heights in `config/regtest` (Canopy at 1, NU5/Orchard at 2)
 5. Mine 2 blocks to activate Orchard
 6. Initialize the Zallet wallet (`init-wallet-encryption` + `generate-mnemonic`)
 
@@ -40,7 +40,7 @@ From the repo root:
 docker compose --env-file .env.regtest up -d
 ```
 
-Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source on first run (takes a few minutes; subsequent runs use the Docker layer cache).
+Zebra and Zallet use pre-built images. The rpc-router builds from source on first run (takes a few minutes; subsequent runs use the Docker layer cache).
 
 > [!NOTE]
 > Regtest host ports are explicit and globally unique so all three networks (mainnet, testnet, regtest) can run concurrently on one host without binding collisions.
@@ -48,7 +48,7 @@ Zebra, Zaino, and Zallet use pre-built images. The rpc-router builds from source
 | Service | Endpoint | Description |
 |---------|----------|-------------|
 | rpc-router | http://localhost:8181 | JSON-RPC router (Zebra + Zallet) |
-| Zaino gRPC | localhost:28137 | lightwalletd-compatible gRPC (plaintext h2c) |
+| Zaino gRPC (indexer profile) | localhost:28137 | lightwalletd-compatible gRPC (plaintext h2c) |
 | Zebra RPC | http://localhost:29232 | Direct Zebra JSON-RPC |
 | Zallet RPC | http://localhost:50232 | Direct Zallet JSON-RPC |
 
@@ -74,6 +74,15 @@ curl -s -X POST -H "Content-Type: application/json" \
 ```
 
 ## Test Zaino gRPC
+
+Zaino ships behind the `indexer` profile, so start it explicitly:
+
+```bash
+docker compose --env-file .env.regtest --profile indexer up -d zaino
+```
+
+> [!NOTE]
+> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0` before bringing the stack up.
 
 Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) as plaintext h2c (no TLS). In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `-plaintext` flag tells grpcurl to skip TLS.
 
@@ -116,10 +125,10 @@ The playground calls `rpc.discover` on `http://127.0.0.1:8181` to load the live 
 
 ```bash
 # Stop containers (keeps volumes/wallet data)
-docker compose --env-file .env.regtest down
+docker compose --env-file .env.regtest --profile "*" down
 
 # Full reset (deletes all regtest data; re-run scripts/regtest-init.sh afterwards)
-docker compose --env-file .env.regtest down -v
+docker compose --env-file .env.regtest --profile "*" down -v
 ```
 
 ## Expected output
