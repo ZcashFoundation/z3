@@ -3,7 +3,7 @@
 
 Parses the platform contract's port matrix, volume names, RPC auth mode, and
 service DNS directly from z3-contract.yaml, runs `docker compose --env-file
-.env.<net> --profile monitoring config` for each declared
+.env.<net> --profile monitoring --profile indexer config` for each declared
 network, and asserts that the resolved values match.
 
 Volumes and ports can be plain values or {name, profile} / {container, host,
@@ -73,6 +73,16 @@ def load_contract() -> dict:
     return yaml.safe_load(CONTRACT_FILE.read_text())
 
 
+_ALL_PROFILES: list[str] | None = None
+
+
+def all_profiles() -> list[str]:
+    global _ALL_PROFILES
+    if _ALL_PROFILES is None:
+        _ALL_PROFILES = sorted(load_contract().get("profiles", {}))
+    return _ALL_PROFILES
+
+
 def compose_files_for_network(network_name: str) -> list[str]:
     files = ["docker-compose.yml"]
     overlay = ROOT / f"docker-compose.{network_name}.yml"
@@ -81,11 +91,21 @@ def compose_files_for_network(network_name: str) -> list[str]:
     return files
 
 
-def render_compose(network_name: str, env_file: pathlib.Path) -> str:
+def render_compose(
+    network_name: str, env_file: pathlib.Path, profiles: list[str] | None = None,
+) -> str:
+    """Render `docker compose config`. Defaults to every profile the contract
+    declares; pass profiles=[] to render the default topology with no --profile flags."""
     # Pass -f explicitly so local override files do not affect contract checks.
     compose_args: list[str] = []
     for compose_file in compose_files_for_network(network_name):
         compose_args.extend(["-f", compose_file])
+
+    if profiles is None:
+        profiles = all_profiles()
+    profile_args: list[str] = []
+    for profile in profiles:
+        profile_args.extend(["--profile", profile])
 
     try:
         proc = subprocess.run(
@@ -93,7 +113,7 @@ def render_compose(network_name: str, env_file: pathlib.Path) -> str:
                 "docker", "compose",
                 *compose_args,
                 "--env-file", str(env_file),
-                "--profile", "monitoring",
+                *profile_args,
                 "config",
             ],
             cwd=ROOT, capture_output=True, text=True, check=True,
@@ -214,6 +234,79 @@ def validate_network(asserter: Asserter, network_name: str, spec: dict) -> None:
     )
 
 
+def gated_service_names(contract: dict, profile: str) -> set[str]:
+    return {
+        name for name, entry in contract["service_dns"].items()
+        if isinstance(entry, dict) and entry.get("profile") == profile
+    }
+
+
+def gated_host_ports(spec: dict, profile: str) -> set[int]:
+    return {
+        port_spec["host"]
+        for port_spec in spec["ports"].values()
+        if port_spec.get("profile") == profile and port_spec.get("host") is not None
+    }
+
+
+def gated_volume_names(spec: dict, profile: str) -> set[str]:
+    return {
+        volume_name(vol_entry)
+        for vol_entry in spec["volumes"].values()
+        if isinstance(vol_entry, dict) and vol_entry.get("profile") == profile
+    }
+
+
+def validate_default_excludes_profiled_services(asserter: Asserter, network_name: str,
+                                                spec: dict, contract: dict) -> None:
+    """Assert the default render (no --profile flags) excludes every
+    indexer-gated identifier: service block, host ports, and volume.
+
+    Identifiers are derived from the contract's profile: indexer entries
+    rather than hardcoded, so a future profile-gated service is covered here
+    without a script change.
+    """
+    env_file = ROOT / f".env.{network_name}"
+    if not env_file.exists():
+        print(f"  FAIL: missing {env_file.relative_to(ROOT)}")
+        asserter.failures += 1
+        return
+
+    config = render_compose(network_name, env_file, profiles=[])
+    resolved = yaml.safe_load(config)
+    services = resolved.get("services", {})
+
+    for service in sorted(gated_service_names(contract, "indexer")):
+        if service in services:
+            asserter.fail(f"default render includes profile-gated service {service}")
+        else:
+            print(f"  OK   default render excludes service {service}")
+
+    gated_ports = gated_host_ports(spec, "indexer")
+    rendered_hosts = {
+        int(port["published"])
+        for service_spec in services.values()
+        for port in service_spec.get("ports", [])
+        if port.get("published") is not None
+    }
+    leaked_ports = sorted(gated_ports & rendered_hosts)
+    for port in leaked_ports:
+        asserter.fail(f"default render publishes profile-gated host port {port}")
+    if not leaked_ports:
+        print(f"  OK   default render excludes profile-gated host ports {sorted(gated_ports)}")
+
+    rendered_volume_names = {
+        vol_spec.get("name")
+        for vol_spec in resolved.get("volumes", {}).values()
+        if isinstance(vol_spec, dict)
+    }
+    for volume in sorted(gated_volume_names(spec, "indexer")):
+        if volume in rendered_volume_names:
+            asserter.fail(f"default render includes profile-gated volume {volume}")
+        else:
+            print(f"  OK   default render excludes volume {volume}")
+
+
 def validate_healthchecks(asserter: Asserter, network_name: str,
                           config: str, healthchecks: dict) -> None:
     """Spot-check rendered healthcheck.test shape against contract.healthchecks.
@@ -291,6 +384,10 @@ def main() -> int:
     healthchecks = contract.get("healthchecks", {})
     for net_name, net_spec in contract["networks"].items():
         validate_network(asserter, net_name, net_spec)
+
+        print(f"-- Default topology ({net_name}) --")
+        validate_default_excludes_profiled_services(asserter, net_name, net_spec, contract)
+
         if healthchecks:
             env_file = ROOT / f".env.{net_name}"
             if env_file.exists():

@@ -8,7 +8,7 @@ For copy-paste integration examples, see [`docs/integrations/`](integrations/).
 
 ## Stability promise
 
-Identifiers in the contract are SemVer-stable. The shipped contract version is `1.0.0`:
+Identifiers in the contract are SemVer-stable. The shipped contract version is `2.0.0`:
 
 - **Patch** (1.0.x): documentation-only changes; no consumer impact.
 - **Minor** (1.x.0): adds optional fields, new env vars, new optional services. Existing consumers continue working.
@@ -36,7 +36,7 @@ Of these, `cookie` is part of the consumer-facing attachment surface only when t
 
 ### In-network DNS
 
-Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zallet`). The YAML's `service_dns:` block carries the full list.
+Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zallet`). The YAML's `service_dns:` block carries the full list. `zaino` resolves only when the `indexer` profile is active; its entry carries a `profile:` field.
 
 No per-network suffix: the network itself is the discriminator. A consumer attached to `z3-testnet` uses `http://zebra:18232`; on `z3-mainnet` it uses `http://zebra:8232`.
 
@@ -82,7 +82,7 @@ For the canonical machine-readable inventory (every variable, its namespace tag,
 
 ### Profiles
 
-One Compose profile is available across every network: `monitoring` (Prometheus, Grafana, Jaeger, AlertManager). Enable with `docker compose --env-file .env.<network> --profile monitoring up -d`. Profile-gated identifiers in the YAML carry an explicit `profile:` field.
+Two Compose profiles are available across every network. `monitoring` adds Prometheus, Grafana, Jaeger, and AlertManager. `indexer` adds the Zaino indexer (lightwalletd-compatible gRPC plus a JSON-RPC proxy) for explorers, faucets, and light-client backends. Enable with `docker compose --env-file .env.<network> --profile <name> up -d`. Profile-gated identifiers in the YAML (Zaino's DNS name, volume, ports, healthcheck, and env vars) carry an explicit `profile:` field.
 
 ## What z3 does NOT publish
 

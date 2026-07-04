@@ -30,7 +30,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
+    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:6.0.0-rc.0}
     # Zebra is multi-arch; Docker selects the host's native variant.
     # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
     platform: ${DOCKER_PLATFORM:-}
@@ -112,10 +112,14 @@ services:
       start_period: 5s
 
   zaino:
+    # Opt-in via --profile indexer. The pinned zainod parses only a Zebra
+    # 5.2-era RPC surface; override Z3_ZEBRA_IMAGE to a 5.2 Zebra until upstream
+    # adds Ironwood support for Zebra 6.
+    profiles: [indexer]
     # The -no-tls tag compiles out Zaino's "TLS required on a non-private bind"
     # guard, so intra-container gRPC on 0.0.0.0:8137 runs as plaintext h2c.
     # Terminate edge TLS at a reverse proxy if Zaino is exposed beyond the host.
-    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.4.0-rc.2-no-tls}
+    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.5.1-no-tls}
     # Zaino publishes linux/amd64 only; arm64 hosts run under emulation unless
     # the operator builds from source (see docker-compose.build.yml).
     platform: ${DOCKER_PLATFORM:-linux/amd64}
@@ -123,6 +127,16 @@ services:
     stop_grace_period: 15s
     <<: *common
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    # Zaino refuses to bind its unencrypted JSON-RPC server to non-private
+    # addresses (only a source build with allow_unencrypted_public_json_rpc_bind
+    # lifts that). Bind to the container's own RFC1918 IP instead of 0.0.0.0;
+    # published host ports and service-DNS access are unaffected because Docker
+    # forwards both to the container IP.
+    entrypoint:
+      - bash
+      - -c
+      - ip="$$(getent ahostsv4 "$$HOSTNAME")"; ip="$${ip%% *}"; export ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS="$${ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS:-$${ip}:8237}"; exec /entrypoint.sh "$$@"
+      - --
     command: ["start", "--config", "/etc/zaino/zindexer.toml"]
     depends_on:
       zebra:
@@ -136,7 +150,6 @@ services:
       ZAINO_VALIDATOR_SETTINGS__VALIDATOR_JSONRPC_LISTEN_ADDRESS: zebra:${Z3_ZEBRA_RPC_PORT:-8232}
       ZAINO_VALIDATOR_SETTINGS__VALIDATOR_COOKIE_PATH: /var/run/auth/.cookie
       ZAINO_GRPC_SETTINGS__LISTEN_ADDRESS: 0.0.0.0:8137
-      ZAINO_JSON_SERVER_SETTINGS__JSON_RPC_LISTEN_ADDRESS: 0.0.0.0:8237
     volumes:
       - ${Z3_ZAINO_DATA_PATH:-zaino}:/app/data
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
@@ -153,10 +166,13 @@ services:
       start_interval: 5s
 
   zallet:
-    image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-alpha.4}
-    # The alpha.4 image includes multiple binaries. z3 uses the Zaino-backed
-    # wallet binary; it is currently published for amd64 only.
-    platform: ${DOCKER_PLATFORM:-linux/amd64}
+    # Pinned by digest: upstream re-points the v0.1.0-alpha.4 tag at new builds,
+    # and a silently swapped build can reject the existing wallet database.
+    image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-alpha.4@sha256:3097751a2502857294d7031a360023834b53a6ebd31ed4520f6cd3a148074dbf}
+    # The image is multi-arch and ships multiple binaries; z3 uses the
+    # Zaino-backed wallet binary. Docker selects the host's native variant.
+    # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
+    platform: ${DOCKER_PLATFORM:-}
     restart: unless-stopped
     stop_grace_period: 15s
     <<: *common

@@ -7,7 +7,7 @@ For the public contract (network names, volume names, port matrix), see [`contra
 ## Overview
 
 ```text
-docker-compose.yml              Base stack (Zebra + Zaino + Zallet + optional profiles)
+docker-compose.yml              Base stack (Zebra + Zallet; Zaino under the indexer profile; optional monitoring profile)
 docker-compose.regtest.yml      Regtest overlay (structural differences only)
 docker-compose.build.yml        Opt-in source-build overlay (scripts/vendor.sh)
 .env.mainnet                    Mainnet selection + canonical ports
@@ -28,7 +28,7 @@ The core principle: **`docker-compose.yml` is self-sufficient for mainnet**. Eve
 Every variable reference in `docker-compose.yml` includes a default value:
 
 ```yaml
-image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:5.0.0}
+image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:6.0.0-rc.0}
 environment:
   ZEBRA_NETWORK__NETWORK: ${Z3_NETWORK:-Mainnet}
 volumes:
@@ -266,7 +266,7 @@ Zebra writes the RPC cookie at `/var/run/auth/.cookie` with mode `0600` owned by
 
 The base compose includes a small `cookie-permissions` sidecar (`alpine:3` with `cap_add: [FOWNER]`) that polls every 5 seconds and chmods the cookie to `0644` once it appears. The cookie volume is already the consumer attachment surface, so loosening the file mode within that volume does not change the security boundary; anyone with access to mount the volume already has access to the cookie.
 
-Zaino and Zallet depend on the sidecar's healthcheck, so targeted starts such as `docker compose up -d zaino` also start the sidecar and wait until the cookie is readable. On mainnet and testnet the healthcheck waits for `/var/run/auth/.cookie`; on regtest it exits successfully because cookie auth is disabled and username/password auth is used instead.
+Zallet (and Zaino under the indexer profile) depends on the sidecar's healthcheck, so a targeted start such as `docker compose up -d zallet` also starts the sidecar and waits until the cookie is readable. On mainnet and testnet the healthcheck waits for `/var/run/auth/.cookie`; on regtest it exits successfully because cookie auth is disabled and username/password auth is used instead.
 
 ## Zallet config readability and operator uid
 

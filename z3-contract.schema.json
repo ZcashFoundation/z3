@@ -87,7 +87,7 @@
   "$defs": {
     "profileName": {
       "type": "string",
-      "enum": ["monitoring"]
+      "enum": ["monitoring", "indexer"]
     },
     "networkName": {
       "type": "string",

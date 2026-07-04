@@ -17,9 +17,9 @@ When an entry says "see README", the fix lives there; this FAQ only adds the dia
 
 That's the `/ready` probe doing its job, not a fault. `/ready` requires the node to have at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` (default `1`) and to be within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` (default `2`) of the network tip. A fresh start from a cold chain, or a restart on a cache that's a few minutes behind, will report `unhealthy` until both thresholds are met.
 
-For development, `/healthy` is a looser signal that only checks peer connectivity. The tracked `docker-compose.override.yml.example` flips the healthcheck to `/healthy` so Zaino and Zallet can start without waiting for full sync. Use it for dev, never for production where you want consumers to wait for a synced node.
+For development, `/healthy` is a looser signal that only checks peer connectivity. The tracked `docker-compose.override.yml.example` flips the healthcheck to `/healthy` so Zallet (and Zaino under the indexer profile) can start without waiting for full sync. Use it for dev, never for production where you want consumers to wait for a synced node.
 
-Don't run `docker compose up -d` (it starts Zaino and Zallet) until Zebra reports `/ready`. The poller `scripts/check-zebra-readiness.sh` waits for exactly that. README Quick start step 3 explains the two-phase boot.
+Don't run `docker compose up -d` (it starts Zallet) until Zebra reports `/ready`. The poller `scripts/check-zebra-readiness.sh` waits for exactly that. README Quick start step 3 explains the two-phase boot.
 
 ---
 
@@ -35,13 +35,13 @@ To keep it off the OS disk, set `Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state` and ru
 
 For backups, the only thing worth keeping is the `z3-<network>-zallet` volume. It holds the age-encrypted wallet database **and** the identity that decrypts it, so the volume is self-contained: restore it and the wallet opens. Chain state is re-syncable and the RPC cookie is regenerated on boot, so neither belongs in a backup.
 
-`docker compose --env-file .env.<network> down` keeps all volumes; `down -v` deletes them and forces a full re-sync.
+`docker compose --env-file .env.<network> --profile "*" down` keeps all volumes; `down -v` deletes them and forces a full re-sync. Include `--profile "*"` so profile-gated services (indexer, monitoring) are stopped too.
 
 ---
 
 ### Q: How do I set up the Zallet wallet on mainnet or testnet?
 
-`scripts/regtest-init.sh` initializes the regtest wallet automatically. On mainnet and testnet, the node and indexer run fine without a wallet; initialize Zallet's wallet encryption yourself, once per network, when you are ready to manage keys. Zallet runs as uid 1000 but the distroless image ships no data directory, so a freshly created volume is root-owned: make it writable once, then generate the identity and initialize encryption:
+`scripts/regtest-init.sh` initializes the regtest wallet automatically. On mainnet and testnet, the node runs fine without an initialized wallet; set up Zallet's wallet encryption yourself, once per network, when you are ready to manage keys. Zallet runs as uid 1000 but the distroless image ships no data directory, so a freshly created volume is root-owned: make it writable once, then generate the identity and initialize encryption:
 
 ```bash
 # One-time: make the data volume writable by Zallet's uid (1000).
@@ -127,7 +127,8 @@ The same override pattern works for other services through `Z3_ZAINO_IMAGE` and 
 Overrides are opt-in. A fresh clone boots with no override file, so nothing breaks before you run any setup.
 
 - **Mainnet:** Compose natively auto-loads `docker-compose.override.yml` when it is present and you pass no `-f` or `COMPOSE_FILE`. An absent file is not an error.
-- **Testnet and regtest:** `.env.<network>` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.<network>.yml`, with no override entry, so the stack renders on a fresh clone. To add per-host customizations (pinning Zebra to `linux/arm64`, adding `deploy.resources.limits`), create `docker-compose.<network>.override.yml` and load it explicitly, either by passing `-f docker-compose.yml -f docker-compose.<network>.yml -f docker-compose.<network>.override.yml`, or by appending the override to `COMPOSE_FILE` in your operator-local `.env`.
+- **Testnet:** No network overlay exists; `.env.testnet` sets `COMPOSE_FILE=docker-compose.yml`, so the stack renders on a fresh clone. To add per-host customizations (pinning Zebra to `linux/arm64`, adding `deploy.resources.limits`), create `docker-compose.testnet.override.yml` and load it explicitly, either by passing `-f docker-compose.yml -f docker-compose.testnet.override.yml`, or by appending the override to `COMPOSE_FILE` in your operator-local `.env`.
+- **Regtest:** `.env.regtest` sets `COMPOSE_FILE=docker-compose.yml:docker-compose.regtest.yml` to layer the regtest overlay (adds `rpc-router` and regtest-only settings) on a fresh clone. Per-host customizations work the same way as testnet: create `docker-compose.regtest.override.yml` and either pass it with `-f` or append it to `COMPOSE_FILE`.
 
 The compose merge order is left-to-right, so the override comes last and wins. The live override file is gitignored, so `git pull` never touches it.
 
@@ -163,20 +164,20 @@ docker exec z3-mainnet-zebra-1 uname -m              # aarch64 = native, x86_64 
 docker top z3-mainnet-zebra-1 -o cmd | head -3       # /usr/bin/qemu-x86_64 wrapper = emulated
 ```
 
-Zaino and Zallet are pinned to amd64 by default (their upstream images publish amd64 only) and run under emulation; the workload is light enough that the CPU drain is barely noticeable next to Zebra's verifier.
+Zaino is pinned to amd64 by default (its upstream image publishes amd64 only) and runs under emulation; the workload is light enough that the CPU drain is barely noticeable next to Zebra's verifier. Zallet is multi-arch and runs natively.
 
 ---
 
-### Q: Can I run Zaino or Zallet natively on Apple Silicon?
+### Q: Can I run Zaino natively on Apple Silicon?
 
-Not from the pinned tags. The default Zaino and Zallet images publish `linux/amd64` only (declared in [`z3-contract.yaml`](../z3-contract.yaml) under `image_platforms:`). Confirm with `docker buildx imagetools inspect <image>`. The `unknown/unknown` entries in that output are OCI attestation manifests (SBOM/provenance), not real platform variants.
+Not from the pinned tag. The default Zaino image publishes `linux/amd64` only (declared in [`z3-contract.yaml`](../z3-contract.yaml) under `image_platforms:`). Confirm with `docker buildx imagetools inspect <image>`. The `unknown/unknown` entries in that output are OCI attestation manifests (SBOM/provenance), not real platform variants.
 
 Two ways forward if you need native arm64:
 
-1. **Build locally.** Fetch the upstream sources with `scripts/vendor.sh zaino zallet`, then build with the opt-in overlay: `DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino zallet`.
+1. **Build locally.** Fetch the upstream source with `scripts/vendor.sh zaino`, then build with the opt-in overlay: `DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino`.
 2. **Wait for the upstream tag to gain a multi-arch publish, then bump the pin.** Existing tags never gain new platform variants after the fact; only new tags do.
 
-Leaving these two services under emulation is fine in practice; the workload is light compared to Zebra's verifier, which runs natively.
+Leaving Zaino under emulation is fine in practice; the workload is light compared to Zebra's verifier, which runs natively. Zaino only runs under the `indexer` profile, so the default stack is unaffected either way.
 
 Zaino's canonical upstream is [zingolabs/zaino](https://github.com/zingolabs/zaino), published to Docker Hub as `zingodevops/zainod` (matching the daemon binary name). `zingodevops/zaino` is an alias publishing identical digests.
 
@@ -212,7 +213,7 @@ If you can't control the consumer, the next lever is compose-level CPU limits (t
 
 Because regtest is meant to look like classic local dev, where username/password auth is the convention every existing tutorial and client library assumes. The regtest overlay (`docker-compose.regtest.yml`) disables Zebra's cookie auth and adds an `rpc-router` sidecar that authenticates with `zebra` / `zebra` against Zebra, so the same RPC client works without juggling cookie files.
 
-Cookie auth stays the default for mainnet and testnet, where Zaino and Zallet read the shared cookie volume directly. See [docs/regtest.md](regtest.md) for the full regtest workflow and the curl/grpcurl examples that use the regtest credentials.
+Cookie auth stays the default for mainnet and testnet, where Zallet (and Zaino under the indexer profile) reads the shared cookie volume directly. See [docs/regtest.md](regtest.md) for the full regtest workflow and the curl/grpcurl examples that use the regtest credentials.
 
 ---
 

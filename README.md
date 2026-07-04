@@ -1,6 +1,6 @@
 # Z3: a Zcash node platform
 
-Z3 runs **Zebra** (full node), **Zaino** (indexer), and **Zallet** (wallet) together with Docker Compose, on mainnet, testnet, or a local regtest network.
+Z3 runs **Zebra** (full node) and **Zallet** (wallet) together with Docker Compose, on mainnet, testnet, or a local regtest network. An optional **Zaino** indexer adds a lightwalletd-compatible gRPC endpoint behind the `indexer` profile.
 
 Two kinds of people use Z3, and this README is split for them:
 
@@ -31,7 +31,7 @@ All three can run at once on one host; each gets its own ports and volumes. New 
 
 Each network has a one-time setup step and a start step.
 
-**Mainnet (production).** Zebra must sync the whole chain before Zaino and Zallet can serve clients, so the boot is two-phase: start Zebra, wait for the sync, then start the rest.
+**Mainnet (production).** Zebra must sync the whole chain before Zallet can serve clients, so the boot is two-phase: start Zebra, wait for the sync, then start the rest.
 
 ```bash
 git clone https://github.com/ZcashFoundation/z3 && cd z3
@@ -43,14 +43,14 @@ git clone https://github.com/ZcashFoundation/z3 && cd z3
 docker compose --env-file .env.mainnet up -d zebra
 ./scripts/check-zebra-readiness.sh
 
-# 3. Start Zaino + Zallet once Zebra is synced.
+# 3. Start Zallet once Zebra is synced.
 docker compose --env-file .env.mainnet up -d
 ```
 
 Images are pulled automatically; no build step or source checkout is needed.
 
 > [!IMPORTANT]
-> Running step 3 before Zebra reaches `/ready` makes Zaino and Zallet restart-loop until the sync catches up. The poller in step 2 exits only when Zebra is synced.
+> Running step 3 before Zebra reaches `/ready` makes Zallet restart-loop until the sync catches up. The poller in step 2 exits only when Zebra is synced.
 
 Your edits to the per-network config under `config/<network>/` stay local and survive `git pull`.
 
@@ -79,7 +79,7 @@ Each network keeps its chain state in a Docker named volume called `z3-<network>
 - **Find the path:** `docker volume inspect z3-mainnet-chain -f '{{.Mountpoint}}'`
 - **Put it on another disk:** set `Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state` and run `./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state` before the first start.
 - **Back up the wallet:** the only data worth backing up is the `z3-<network>-zallet` volume. It holds both the encrypted wallet database and the age identity that decrypts it, so the volume is self-contained. Chain state is re-syncable and the cookie is regenerated, so neither needs backup.
-- **Stop vs wipe:** `docker compose --env-file .env.<network> down` stops the stack and keeps every volume; adding `-v` (`down -v`) deletes them, which means a full re-sync.
+- **Stop vs wipe:** `docker compose --env-file .env.<network> --profile "*" down` stops the stack and keeps every volume; adding `-v` (`down -v`) deletes them, which means a full re-sync. `--profile "*"` includes profile-gated services (indexer, monitoring); without it their containers keep running and `down -v` leaves their volumes behind.
 
 The volume table and bind-mount details are in the [Reference](#reference) section.
 
@@ -106,11 +106,22 @@ docker compose --env-file .env.<network> --profile monitoring up -d
 
 Default UI host ports are globally unique across the three networks (mainnet Grafana `3000`, testnet `13000`, regtest `23000`, and so on). Each is overridable: `Z3_GRAFANA_PORT`, `Z3_PROMETHEUS_PORT`, `Z3_ALERTMANAGER_PORT`, `Z3_JAEGER_UI_PORT`.
 
+### Indexer
+
+The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it.
+
+```bash
+docker compose --env-file .env.<network> --profile indexer up -d
+```
+
+> [!NOTE]
+> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0`.
+
 ### Stopping the stack
 
 ```bash
-docker compose --env-file .env.mainnet down       # stop containers, keep data
-docker compose --env-file .env.mainnet down -v    # stop and delete all volumes (full reset)
+docker compose --env-file .env.mainnet --profile "*" down       # stop containers, keep data
+docker compose --env-file .env.mainnet --profile "*" down -v    # stop and delete all volumes (full reset)
 ```
 
 ## Building and testing against Z3
@@ -138,7 +149,7 @@ Mainnet pairs cleanly with either other network on one host. Testnet and regtest
 graph LR
     subgraph Z3["Z3 (per network)"]
         Zebra["Zebra<br/>(full node)"]
-        Zaino["Zaino<br/>(indexer)"]
+        Zaino["Zaino<br/>(indexer, opt-in)"]
 
         subgraph Zallet["Zallet (wallet)"]
             EmbeddedZaino["Embedded<br/>Zaino libs"]
@@ -150,7 +161,7 @@ graph LR
     Zaino -->|gRPC| LightClients["Light wallet<br/>clients"]
 ```
 
-**Zebra** syncs and validates the Zcash blockchain. **Zaino** provides a lightwalletd-compatible gRPC interface for light wallet clients. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary.
+**Zebra** syncs and validates the Zcash blockchain. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary. **Zaino** is optional, behind the `indexer` profile: it exposes a standalone lightwalletd-compatible gRPC interface for external light wallet clients.
 
 Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet).
 
@@ -163,8 +174,8 @@ Published host ports are chosen per `.env.<network>` so all networks coexist on 
 | Zebra RPC | `http://localhost:<port>` | `Z3_ZEBRA_HOST_RPC_PORT` |
 | Zebra p2p (inbound peers) | `localhost:<port>` | `Z3_ZEBRA_HOST_P2P_PORT` |
 | Zebra health | `http://localhost:<port>/ready` | `Z3_ZEBRA_HOST_HEALTH_PORT` |
-| Zaino gRPC (plaintext, no TLS) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
-| Zaino JSON-RPC | `http://localhost:<port>` | `Z3_ZAINO_HOST_JSON_RPC_PORT` |
+| Zaino gRPC (plaintext, no TLS; indexer profile) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
+| Zaino JSON-RPC (indexer profile) | `http://localhost:<port>` | `Z3_ZAINO_HOST_JSON_RPC_PORT` |
 | Zallet RPC | `http://localhost:<port>` | `Z3_ZALLET_HOST_RPC_PORT` |
 
 Inside the network, services resolve by DNS name (`zebra`, `zaino`, `zallet`) on Zebra's per-network container ports.
@@ -261,14 +272,14 @@ diff config/mainnet/zallet.toml config/mainnet/zallet.toml.example
 
 ### Platform configuration (ARM64)
 
-Zebra is multi-arch; Docker picks the host's native arch automatically, no override needed. Zaino and Zallet are pinned to `linux/amd64` because their upstream images publish amd64 only. On Apple Silicon those two run under emulation by default; the workload is light enough that this rarely matters.
+Zebra and Zallet are multi-arch; Docker picks the host's native arch automatically, no override needed. Zaino is pinned to `linux/amd64` because its upstream image publishes amd64 only. On Apple Silicon it runs under emulation by default; the workload is light enough that this rarely matters.
 
-To run Zaino and Zallet natively on arm64, build them from source:
+To run Zaino natively on arm64, build it from source:
 
 ```bash
-scripts/vendor.sh zaino zallet
-DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino zallet
-docker compose --env-file .env.mainnet up -d
+scripts/vendor.sh zaino
+DOCKER_PLATFORM=linux/arm64 docker compose -f docker-compose.yml -f docker-compose.build.yml build zaino
+docker compose --env-file .env.mainnet --profile indexer up -d
 ```
 
 </details>
@@ -307,7 +318,7 @@ Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
 # Pin a different image version, or use zfnd/zebra:latest to track Zebra releases
-Z3_ZEBRA_IMAGE=zfnd/zebra:5.0.0
+Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
@@ -330,7 +341,7 @@ Z3 declares each volume with an explicit `name:` so the external Docker identifi
 | Suffix | Contents |
 |--------|----------|
 | `chain` | Zebra blockchain state (~300 GB mainnet, ~30 GB testnet) |
-| `zaino` | Zaino indexer database |
+| `zaino` | Zaino indexer database (indexer profile) |
 | `zallet` | Zallet wallet database (contains keys) |
 | `cookie` | RPC authentication cookie for mainnet/testnet (regtest disables cookie auth) |
 
@@ -385,11 +396,11 @@ Zebra exposes two endpoints on its health port:
 ```
 Zebra (/ready: synced near tip)
   -> Cookie permissions (.cookie readable on cookie-auth networks)
-  -> Zaino (gRPC port responding)
   -> Zallet (RPC responding)
+  -> Zaino (gRPC port responding; indexer profile)
 ```
 
-The default compose gates Zaino and Zallet on Zebra's `/ready` endpoint and on the cookie-permissions sidecar when cookie auth is enabled. For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to switch Zebra gating to `/healthy` (allows services to start during sync, but they may error until Zebra catches up).
+The default compose gates Zallet on Zebra's `/ready` endpoint and on the cookie-permissions sidecar when cookie auth is enabled; the indexer profile adds Zaino under the same gates. For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to switch Zebra gating to `/healthy` (allows services to start during sync, but they may error until Zebra catches up).
 
 ### Monitoring sync progress
 
