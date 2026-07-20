@@ -4,9 +4,6 @@ Your service is a wallet, block explorer, or scanner that speaks the lightwallet
 
 Zaino ships behind the `indexer` Compose profile, so every Z3 command in this guide must include `--profile indexer`. The default Z3 stack does not start Zaino.
 
-> [!NOTE]
-> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0` before bringing the stack up.
-
 ## Prerequisites
 
 - A running Z3 stack with the indexer profile: `docker compose --env-file .env.<network> --profile indexer up -d` in the Z3 repo.

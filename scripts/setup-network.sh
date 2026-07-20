@@ -68,7 +68,7 @@ mkdir -p "$CONFIG_DIR"
 
 copy_template zaino.toml
 copy_template zallet.toml
-# Regtest needs a Zebra TOML to activate NU5/NU6 at heights Zaino expects.
+# Regtest needs a Zebra TOML to activate upgrades through NU6.3 at height 2.
 # Mainnet and testnet use Zebra's built-in network defaults.
 if [ "$NETWORK" = "regtest" ]; then
     copy_template zebra.toml

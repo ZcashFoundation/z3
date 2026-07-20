@@ -162,8 +162,8 @@ jobs:
             http://127.0.0.1:29232 | jq .
 
       - name: Mine the activation blocks
-        # config/regtest activates NU5 at height 2; mine two blocks so the
-        # network is past activation before wallet init.
+        # config/regtest activates NU5 through NU6.3 at height 2; mine two
+        # blocks so the network is past activation before wallet init.
         run: |
           curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"generate","params":[2],"id":1}' \

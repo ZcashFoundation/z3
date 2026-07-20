@@ -16,8 +16,8 @@ services:
     # is a parse error).
     environment:
       ZEBRA_MINING__MINER_ADDRESS: ${ZEBRA_MINING__MINER_ADDRESS:?must be set in .env.regtest or shell environment}
-    # Zebra's default regtest stops at Canopy; this config activates NU5/NU6
-    # at the heights Zaino's regtest defaults expect. zebrad reads
+    # Zebra's default regtest stops at Canopy; this config activates every
+    # supported upgrade through NU6.3 at height 2. zebrad reads
     # ~/.config/zebrad.toml automatically.
     volumes:
       - ${Z3_CONFIG_DIR:-./config/regtest}/zebra.toml:/home/zebra/.config/zebrad.toml:ro
@@ -53,6 +53,7 @@ services:
     # /var/run dirs at runtime).
     volumes: !override
       - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/lib/zallet
+      - zallet_ca_certificates:/etc/ssl/certs:ro
       - ${Z3_CONFIG_DIR:-./config/regtest}/zallet.toml:/etc/zallet/zallet.toml:ro
 
   rpc-router:

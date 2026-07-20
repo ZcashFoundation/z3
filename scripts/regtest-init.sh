@@ -171,7 +171,7 @@ until curl -sf -X POST \
 done
 echo "   Zebra is ready."
 
-echo "==> Mining 2 blocks (config/regtest activates NU5/Orchard at height 2; zebra.toml and zallet.toml agree)..."
+echo "==> Mining 2 blocks (config/regtest activates NU5 through NU6.3 at height 2; Zebra and Zallet agree)..."
 curl -s -u zebra:zebra \
     -X POST -H "Content-Type: application/json" \
     -d '{"jsonrpc":"2.0","method":"generate","params":[2],"id":1}' \

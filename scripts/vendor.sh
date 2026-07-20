@@ -16,12 +16,12 @@ declare -a ALL=(zebra zaino zallet)
 declare -A URL=(
   [zebra]="https://github.com/ZcashFoundation/zebra"
   [zaino]="https://github.com/zingolabs/zaino"
-  [zallet]="https://github.com/zcash/wallet"
+  [zallet]="https://github.com/zcash/zallet"
 )
 declare -A REF=(
-  [zebra]="v6.0.0-rc.0"
-  [zaino]="0.5.1"
-  [zallet]="v0.1.0-alpha.4"
+  [zebra]="v6.2.0"
+  [zaino]="0.6.0"
+  [zallet]="v0.1.0-beta.1"
 )
 
 vendor_one() {
