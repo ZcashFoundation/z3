@@ -124,12 +124,14 @@ jobs:
     name: Regtest smoke test
     runs-on: ubuntu-latest
     needs: contract-validation
-    # External identifiers for the regtest stack. Keep aligned with
-    # z3-contract.yaml networks.regtest.{external_network,volumes.cookie}.
+    # Resource identifiers exercised by this smoke test. Keep the external
+    # identifiers aligned with z3-contract.yaml and the internal CA volume
+    # aligned with its explicit name in docker-compose.yml.
     # Values are literal constants, not user input — safe in run: blocks.
     env:
       COOKIE_VOLUME: z3-regtest-cookie
       EXTERNAL_NETWORK: z3-regtest
+      ZALLET_CA_CERTIFICATES_VOLUME: z3-regtest-zallet-ca-certificates
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -162,8 +164,8 @@ jobs:
             http://127.0.0.1:29232 | jq .
 
       - name: Mine the activation blocks
-        # config/regtest activates NU5 at height 2; mine two blocks so the
-        # network is past activation before wallet init.
+        # config/regtest activates NU5 through NU6.3 at height 2; mine two
+        # blocks so the network is past activation before wallet init.
         run: |
           curl -sf -u zebra:zebra -X POST -H "Content-Type: application/json" \
             -d '{"jsonrpc":"2.0","method":"generate","params":[2],"id":1}' \
@@ -195,6 +197,14 @@ jobs:
           docker compose --env-file .env.regtest run --rm zallet \
             --datadir /var/lib/zallet --config /etc/zallet/zallet.toml \
             generate-mnemonic
+
+      - name: Assert CA bundle is readable by Zallet's compose user
+        run: |
+          ZALLET_USER="$(docker compose --env-file .env.regtest config --format json \
+            | python3 -c 'import json, sys; print(json.load(sys.stdin)["services"]["zallet"]["user"])')"
+          docker run --rm --user "$ZALLET_USER" \
+            -v "$ZALLET_CA_CERTIFICATES_VOLUME":/etc/ssl/certs:ro alpine \
+            sh -c 'test -s /etc/ssl/certs/ca-certificates.crt && cat /etc/ssl/certs/ca-certificates.crt >/dev/null'
 
       - name: Start Zallet and rpc-router, verify wallet RPC
         run: |

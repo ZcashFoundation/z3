@@ -30,7 +30,7 @@ x-common: &common
 
 services:
   zebra:
-    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:6.0.0-rc.0}
+    image: ${Z3_ZEBRA_IMAGE:-zfnd/zebra:6.2.0}
     # Zebra is multi-arch; Docker selects the host's native variant.
     # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
     platform: ${DOCKER_PLATFORM:-}
@@ -78,7 +78,8 @@ services:
       start_period: 90s
       start_interval: 5s
 
-  # Sidecar: makes Zebra's RPC cookie readable inside the shared auth volume.
+  # Sidecar: makes Zebra's RPC cookie readable inside the shared auth volume
+  # and supplies the CA bundle omitted from Zallet's distroless beta image.
   # Zebra writes /var/run/auth/.cookie with mode 0600 owned by uid 10001;
   # Zaino, Zallet, and attached services may run as different users.
   cookie-permissions:
@@ -91,10 +92,12 @@ services:
       ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}
     volumes:
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth
+      - zallet_ca_certificates:/var/run/zallet-ca
     command:
       - sh
       - -c
       - |
+        cp /etc/ssl/certs/ca-certificates.crt /var/run/zallet-ca/ca-certificates.crt
         while true; do
           if [ -f /var/run/auth/.cookie ]; then
             chmod 0644 /var/run/auth/.cookie 2>/dev/null
@@ -105,21 +108,19 @@ services:
       zebra:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "if [ \"$${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}\" = \"false\" ]; then exit 0; fi; test -r /var/run/auth/.cookie"]
+      test: ["CMD-SHELL", "test -s /var/run/zallet-ca/ca-certificates.crt && { [ \"$${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}\" = \"false\" ] || test -r /var/run/auth/.cookie; }"]
       interval: 5s
       timeout: 2s
       retries: 12
       start_period: 5s
 
   zaino:
-    # Opt-in via --profile indexer. The pinned zainod parses only a Zebra
-    # 5.2-era RPC surface; override Z3_ZEBRA_IMAGE to a 5.2 Zebra until upstream
-    # adds Ironwood support for Zebra 6.
+    # Opt-in via --profile indexer. Zaino 0.6 supports Zebra 6 and NU6.3.
     profiles: [indexer]
     # The -no-tls tag compiles out Zaino's "TLS required on a non-private bind"
     # guard, so intra-container gRPC on 0.0.0.0:8137 runs as plaintext h2c.
     # Terminate edge TLS at a reverse proxy if Zaino is exposed beyond the host.
-    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.5.1-no-tls}
+    image: ${Z3_ZAINO_IMAGE:-zingodevops/zainod:0.6.0-no-tls}
     # Zaino publishes linux/amd64 only; arm64 hosts run under emulation unless
     # the operator builds from source (see docker-compose.build.yml).
     platform: ${DOCKER_PLATFORM:-linux/amd64}
@@ -166,9 +167,9 @@ services:
       start_interval: 5s
 
   zallet:
-    # Pinned by digest: upstream re-points the v0.1.0-alpha.4 tag at new builds,
-    # and a silently swapped build can reject the existing wallet database.
-    image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-alpha.4@sha256:3097751a2502857294d7031a360023834b53a6ebd31ed4520f6cd3a148074dbf}
+    # Pinned by digest: the beta.1 release image was rebuilt after tagging to
+    # correct its multi-architecture binary packaging.
+    image: ${Z3_ZALLET_IMAGE:-zodlinc/zallet:v0.1.0-beta.1@sha256:1849b4469875dc0165942c06d15fa6a7da76b2d43bade578cc8e5903a639869d}
     # The image is multi-arch and ships multiple binaries; z3 uses the
     # Zaino-backed wallet binary. Docker selects the host's native variant.
     # DOCKER_PLATFORM forces a specific arch for cross-architecture testing.
@@ -189,6 +190,8 @@ services:
     volumes:
       - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/lib/zallet
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth:ro
+      # Temporary runtime supply until the upstream image includes this file.
+      - zallet_ca_certificates:/etc/ssl/certs:ro
       - ${Z3_CONFIG_DIR:-./config/mainnet}/zallet.toml:/etc/zallet/zallet.toml:ro
     ports:
       - "${Z3_ZALLET_HOST_RPC_PORT:-28232}:28232"
@@ -307,6 +310,9 @@ volumes:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zaino
   zallet:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet
+  # Internal runtime data, not part of the consumer-facing volume contract.
+  zallet_ca_certificates:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet-ca-certificates
   prometheus_data:
   grafana_data:
   alertmanager_data:

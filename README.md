@@ -108,14 +108,11 @@ Default UI host ports are globally unique across the three networks (mainnet Gra
 
 ### Indexer
 
-The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it.
+The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it. Zebra and Zallet also use the word "indexer" for separate configuration and build surfaces; the [FAQ distinguishes their requirements](docs/faq.md#q-which-indexer-does-z3-use-and-does-zebra-need-the-indexer-build-feature).
 
 ```bash
 docker compose --env-file .env.<network> --profile indexer up -d
 ```
-
-> [!NOTE]
-> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0`.
 
 ### Stopping the stack
 
@@ -163,7 +160,7 @@ graph LR
 
 **Zebra** syncs and validates the Zcash blockchain. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary. **Zaino** is optional, behind the `indexer` profile: it exposes a standalone lightwalletd-compatible gRPC interface for external light wallet clients.
 
-Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/wallet).
+Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/zallet).
 
 ### Service endpoints
 
@@ -317,8 +314,9 @@ z3 sets the service-internal vars (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SE
 Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
-# Pin a different image version, or use zfnd/zebra:latest to track Zebra releases
-Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0
+# Override the tracked Zebra pin, for example to roll back to an earlier release
+Z3_ZEBRA_IMAGE=zfnd/zebra:6.1.0
+# To opt into the moving latest tag instead, follow docs/faq.md
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state

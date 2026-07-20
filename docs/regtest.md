@@ -22,8 +22,8 @@ This will:
 1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zallet.toml`) into live gitignored files
 2. Generate the Zallet encryption identity in-container into the data volume (if not already present)
 3. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
-4. Start Zebra in regtest mode with the activation heights in `config/regtest` (Canopy at 1, NU5/Orchard at 2)
-5. Mine 2 blocks to activate Orchard
+4. Start Zebra in regtest mode with the activation heights in `config/regtest` (Canopy at 1, NU5 through NU6.3 at 2)
+5. Mine 2 blocks to activate Ironwood
 6. Initialize the Zallet wallet (`init-wallet-encryption` + `generate-mnemonic`)
 
 Optionally override the rpc-router password (default is `zebra`). The `REGTEST_` infix marks the var as regtest-scoped:
@@ -80,9 +80,6 @@ Zaino ships behind the `indexer` profile, so start it explicitly:
 ```bash
 docker compose --env-file .env.regtest --profile indexer up -d zaino
 ```
-
-> [!NOTE]
-> The pinned `zingodevops/zainod` release cannot parse Zebra `6.0.0-rc.0` RPC responses. Until upstream ships Ironwood support, run the indexer profile against a Zebra 5.2-era image by setting `Z3_ZEBRA_IMAGE=zfnd/zebra:5.2.0` before bringing the stack up.
 
 Zaino exposes the [lightwalletd-compatible gRPC protocol](https://github.com/zcash/lightwalletd/blob/master/walletrpc/service.proto) as plaintext h2c (no TLS). In regtest the host port is `28137` (`Z3_ZAINO_HOST_GRPC_PORT`); the `-plaintext` flag tells grpcurl to skip TLS.
 
@@ -158,7 +155,7 @@ Regtest monitoring UI ports are Grafana `23000`, Prometheus `29094`, Jaeger UI `
 ## Notes
 
 - Credentials: `zebra` / `zebra` (hardcoded for regtest only)
-- Regtest activates upgrades through Canopy at block 1 and NU5/Orchard at block 2 (Zebra, Zaino, and Zallet all agree)
+- Regtest activates upgrades through Canopy at block 1 and NU5 through NU6.3 at block 2 (Zebra, Zaino, and Zallet all agree)
 - Zaino uses username/password auth in regtest (not cookie auth)
 - Zaino gRPC is plaintext h2c on all networks; terminate edge TLS at a reverse proxy if exposed beyond the host
 - The rpc-router source is in `rpc-router/`; it is built automatically on first `docker compose up`
