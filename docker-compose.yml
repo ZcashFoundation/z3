@@ -312,6 +312,7 @@ volumes:
     name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet
   # Internal runtime data, not part of the consumer-facing volume contract.
   zallet_ca_certificates:
+    name: ${COMPOSE_PROJECT_NAME:-z3-mainnet}-zallet-ca-certificates
   prometheus_data:
   grafana_data:
   alertmanager_data:
