@@ -314,8 +314,9 @@ z3 sets the service-internal vars (`ZEBRA_RPC__LISTEN_ADDR`, `ZAINO_VALIDATOR_SE
 Z3_ZEBRA_RUST_LOG=debug
 Z3_ZAINO_RUST_LOG=debug
 
-# Pin a different image version, or use zfnd/zebra:latest to track Zebra releases
+# Override the tracked Zebra pin, for example to roll back to an earlier release
 Z3_ZEBRA_IMAGE=zfnd/zebra:6.1.0
+# To opt into the moving latest tag instead, follow docs/faq.md
 
 # Move chain state to an external SSD
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
