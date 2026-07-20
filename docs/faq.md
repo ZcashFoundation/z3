@@ -120,6 +120,37 @@ The same override pattern works for other services through `Z3_ZAINO_IMAGE` and 
 
 ---
 
+### Q: Which "indexer" does Z3 use, and does Zebra need the `indexer` build feature?
+
+The default Z3 stack does not require Zebra's `indexer` build feature or its indexer gRPC listener. Z3 runs the `zallet-zaino` wallet backend, which reads Zebra through its regular JSON-RPC endpoint, while the optional `indexer` Compose profile starts the standalone Zaino service.
+
+Several settings use the same word for different capabilities:
+
+| Name | What it does | Changes Zebra's stored state? | Required by default Z3? |
+|------|--------------|:-----------------------------:|:-----------------------:|
+| Compose `--profile indexer` | Starts the standalone Zaino service for lightwalletd-compatible clients | No | No |
+| Zallet's `[indexer]` section | Configures how Z3's `zallet-zaino` process reaches Zebra over JSON-RPC | No | Yes |
+| Zebra's `rpc.indexer_listen_addr` | Starts the `zebra.indexer.rpc.Indexer` gRPC listener in Zebra 6.2 | No | No |
+| Zebra's Cargo `indexer` feature | Adds persistent indexes that map spent outpoints and revealed nullifiers to spending transactions | Yes | No |
+
+The gRPC listener reads Zebra's existing blocks and streams chain-tip, non-finalized-state, and mempool changes. You can enable it on a state directory or restored snapshot that Zebra previously opened without the listener; it does not change the database format, add column families, or backfill data. Set the listener in the operator-local `.env`:
+
+```dotenv
+ZEBRA_RPC__INDEXER_LISTEN_ADDR=0.0.0.0:8155
+```
+
+Then recreate Zebra:
+
+```bash
+docker compose --env-file .env.<network> up -d zebra
+```
+
+Containers attached to the Z3 network can then connect to `zebra:8155`. Z3 does not publish this unauthenticated, plaintext endpoint to the host; add an operator-local Compose port mapping only when a host-side client needs it, and do not expose it to an untrusted network.
+
+The alternative direct-state Zallet backend is different. It shares Zebra's state directory, follows the non-finalized tip over the gRPC listener, and requires a Zebra binary built with the Cargo `indexer` feature. Enabling that build feature against an existing database checks and backfills its persistent spending indexes, so it can make the next startup expensive. Z3 deliberately uses `zallet-zaino` instead, which needs neither the shared state directory nor those additional Zebra indexes.
+
+---
+
 ## For developers and testers
 
 ### Q: How do per-network compose overrides work?

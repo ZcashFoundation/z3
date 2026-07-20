@@ -108,7 +108,7 @@ Default UI host ports are globally unique across the three networks (mainnet Gra
 
 ### Indexer
 
-The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it.
+The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it. Zebra and Zallet also use the word "indexer" for separate configuration and build surfaces; the [FAQ distinguishes their requirements](docs/faq.md#q-which-indexer-does-z3-use-and-does-zebra-need-the-indexer-build-feature).
 
 ```bash
 docker compose --env-file .env.<network> --profile indexer up -d
