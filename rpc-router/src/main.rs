@@ -36,7 +36,7 @@ mod integration_tests;
 /// Structure to parse incoming JSON-RPC requests.
 #[derive(Deserialize, Debug)]
 struct RpcRequest {
-    id: Value,
+    id: Option<Value>,
     method: String,
 }
 
@@ -188,9 +188,18 @@ async fn handler(
     let target_url = if let Ok(rpc_req) = serde_json::from_slice::<RpcRequest>(&body_bytes) {
         if rpc_req.method == "rpc.discover" {
             info!("Routing rpc.discover to merged schema");
+            let Some(request_id) = rpc_req.id else {
+                return Ok(add_cors_headers(
+                    Response::builder()
+                        .status(StatusCode::NO_CONTENT)
+                        .body(Full::new(Bytes::new()))
+                        .expect("empty rpc.discover notification response should be valid"),
+                    &config.cors_origin,
+                ));
+            };
             let response = json!({
                 "jsonrpc": "2.0",
-                "id": rpc_req.id,
+                "id": request_id,
                 "result": z3.merged,
             });
 

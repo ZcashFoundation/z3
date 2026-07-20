@@ -233,6 +233,28 @@ async fn test_rpc_discover_returns_merged_schema_in_json_rpc_envelope() {
 }
 
 #[tokio::test]
+async fn test_rpc_discover_notification_returns_no_content() {
+    let zebra = start_zebra_mock().await;
+    let zallet = start_zallet_mock().await;
+    let zaino = start_zaino_mock().await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+
+    let resp = Client::new()
+        .post(format!("http://127.0.0.1:{}/", router.port))
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "rpc.discover",
+            "params": []
+        }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 204);
+    assert!(resp.bytes().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn test_zebra_method_routing() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
@@ -261,6 +283,29 @@ async fn test_zallet_method_routing() {
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
         .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "getwalletinfo", "params": [] }))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["result"], "zallet-response");
+}
+
+#[tokio::test]
+async fn test_notification_without_id_still_routes_by_method() {
+    let zebra = start_zebra_mock().await;
+    let zallet = start_zallet_mock().await;
+    let zaino = start_zaino_mock().await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+
+    let resp = Client::new()
+        .post(format!("http://127.0.0.1:{}/", router.port))
+        .json(&json!({
+            "jsonrpc": "2.0",
+            "method": "getwalletinfo",
+            "params": []
+        }))
         .send()
         .await
         .unwrap();
