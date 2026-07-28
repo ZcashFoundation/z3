@@ -19,7 +19,7 @@ declare -A URL=(
   [zallet]="https://github.com/zcash/zallet"
 )
 declare -A REF=(
-  [zebra]="v6.2.0"
+  [zebra]="v6.2.3"
   [zaino]="0.6.0"
   [zallet]="v0.1.0-beta.1"
 )
