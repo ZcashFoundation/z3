@@ -78,25 +78,31 @@ services:
       start_period: 90s
       start_interval: 5s
 
-  # Sidecar: makes Zebra's RPC cookie readable inside the shared auth volume
-  # and supplies the CA bundle omitted from Zallet's distroless beta image.
+  # Sidecar: makes Zebra's RPC cookie readable inside the shared auth volume,
+  # supplies the CA bundle omitted from Zallet's distroless beta image, and
+  # prepares Zallet's data volume for its uid-1000 runtime.
   # Zebra writes /var/run/auth/.cookie with mode 0600 owned by uid 10001;
   # Zaino, Zallet, and attached services may run as different users.
   cookie-permissions:
     image: alpine:3
     restart: unless-stopped
     <<: *common
-    # FOWNER is needed to chmod Zebra's cookie after cap_drop: [ALL].
-    cap_add: [FOWNER]
+    # These are needed to prepare Zallet's volume and chmod Zebra's cookie
+    # after cap_drop: [ALL].
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
     environment:
       ZEBRA_RPC__ENABLE_COOKIE_AUTH: ${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}
     volumes:
       - ${Z3_COOKIE_PATH:-cookie}:/var/run/auth
+      - ${Z3_ZALLET_DATA_PATH:-zallet}:/var/run/zallet-data
       - zallet_ca_certificates:/var/run/zallet-ca
     command:
       - sh
       - -c
       - |
+        set -eu
+        touch /var/run/zallet-data/.z3-volume-initialized
+        chown 1000:1000 /var/run/zallet-data /var/run/zallet-data/.z3-volume-initialized
         cp /etc/ssl/certs/ca-certificates.crt /var/run/zallet-ca/ca-certificates.crt
         while true; do
           if [ -f /var/run/auth/.cookie ]; then
@@ -108,7 +114,7 @@ services:
       zebra:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "test -s /var/run/zallet-ca/ca-certificates.crt && { [ \"$${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}\" = \"false\" ] || test -r /var/run/auth/.cookie; }"]
+      test: ["CMD-SHELL", "test -s /var/run/zallet-ca/ca-certificates.crt && test -f /var/run/zallet-data/.z3-volume-initialized && test \"$$(stat -c '%u:%g' /var/run/zallet-data)\" = \"1000:1000\" && { [ \"$${ZEBRA_RPC__ENABLE_COOKIE_AUTH:-true}\" = \"false\" ] || test -r /var/run/auth/.cookie; }"]
       interval: 5s
       timeout: 2s
       retries: 12

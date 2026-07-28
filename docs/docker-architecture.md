@@ -150,7 +150,7 @@ Zaino's config is empty for mainnet and testnet (all settings come from env vars
 
 ### Zallet identity files
 
-Each network's age-encryption identity lives inside the `z3-<network>-zallet` data volume at `/var/lib/zallet/identity.txt`. It is generated in-container by `zallet generate-encryption-identity` (run by `scripts/regtest-init.sh` for regtest, or manually on mainnet/testnet; see the README Quick start). Because the container creates it as uid 1000, no host-side permission handling is needed.
+Each network's age-encryption identity lives inside the `z3-<network>-zallet` data volume at `/var/lib/zallet/identity.txt`. It is generated in-container by `zallet-zaino generate-encryption-identity` (run by `scripts/regtest-init.sh` for regtest, or manually on mainnet/testnet; see the README Quick start). The `cookie-permissions` sidecar creates a marker before Zallet's first mount and sets the volume root to uid 1000, preventing Docker from replacing that ownership with platform-specific image-directory metadata. Zallet then creates the identity as uid 1000.
 
 ## Extension fields and YAML anchors
 
@@ -272,7 +272,7 @@ Zallet (and Zaino under the indexer profile) depends on the sidecar's healthchec
 
 Zallet uses a distroless image with no shell, entrypoint script, or Linux capabilities, so the base compose pins it with `user: "1000:1000"` and it runs as that uid from PID 1. Unlike Zebra, which starts with an entrypoint that can prepare filesystem state before dropping privileges, Zallet can only read its bind-mounted host config file — `config/<network>/zallet.toml` → `/etc/zallet/zallet.toml` — if it is readable by uid 1000.
 
-The same "no UID coordination required" property that the cookie sidecar provides applies here: the setup scripts make the generated TOML config readable by service containers regardless of the operator's host uid, and they re-apply that on every run. `scripts/setup-network.sh` keeps generated TOMLs mode `0644`; `scripts/regtest-init.sh` restores `0644` after its `mktemp`+`mv` pwhash rewrite (which would otherwise leave `zallet.toml` mode `0600`). The encryption identity needs none of this: it is generated in-container into the `z3-<network>-zallet` volume by `generate-encryption-identity`, owned by uid 1000, so Zallet reads it without any host ACL. CI runs these setup paths with restrictive host modes, derives Zallet's UID/GID from rendered Compose, verifies a container running as that user can read the bind-mounted `zallet.toml`, and exercises `generate-encryption-identity` to confirm the in-volume key is created owner-only.
+The same "no UID coordination required" property that the cookie sidecar provides applies here: the setup scripts make the generated TOML config readable by service containers regardless of the operator's host uid, and they re-apply that on every run. `scripts/setup-network.sh` keeps generated TOMLs mode `0644`; `scripts/regtest-init.sh` restores `0644` after its `mktemp`+`mv` pwhash rewrite (which would otherwise leave `zallet.toml` mode `0600`). The encryption identity needs no host ACL: the sidecar normalizes the data-volume root to uid 1000, and Zallet creates the identity inside that volume as the same uid. CI runs these setup paths with restrictive host modes, derives Zallet's UID/GID from rendered Compose, verifies a container running as that user can read the bind-mounted `zallet.toml`, verifies the sidecar-owned volume root, and exercises `generate-encryption-identity` to confirm the in-volume key is created owner-only.
 
 ## Regtest overlay constraints
 

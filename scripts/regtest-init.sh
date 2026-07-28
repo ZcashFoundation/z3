@@ -182,12 +182,12 @@ echo "   Blocks mined."
 ZALLET_VOLUME="${PROJECT}-zallet"
 
 echo "==> Preparing the Zallet data volume..."
-# The distroless Zallet image runs as uid 1000 but ships no /var/lib/zallet
-# directory, so a freshly created named volume is root-owned and unwritable by
-# the container. Chown it to the Zallet uid, and clear any stale lockfile left
-# by an interrupted run.
+# The beta.1 arm64 image exposes /var/lib/zallet as root-owned. Keep the volume
+# non-empty so Docker does not copy that directory metadata over the prepared
+# volume on Zallet's first mount, then make it writable by the uid-1000 runtime.
+# Clear any stale lockfile left by an interrupted run.
 $DOCKER run --rm -v "${ZALLET_VOLUME}:/data" busybox \
-    sh -c 'chown 1000:1000 /data && rm -f /data/.lock'
+    sh -c 'touch /data/.z3-volume-initialized && chown 1000:1000 /data /data/.z3-volume-initialized && rm -f /data/.lock'
 
 # generate-mnemonic stores an age-encrypted file; if one exists the full init
 # sequence has already completed successfully.
