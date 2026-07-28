@@ -5,7 +5,6 @@
 //! to determine which methods belong to which service.
 use std::{env, net::SocketAddr, sync::Arc};
 
-
 use anyhow::Result;
 use base64::{engine::general_purpose, Engine as _};
 use http_body_util::{BodyExt, Full};
@@ -37,6 +36,7 @@ mod integration_tests;
 /// Structure to parse incoming JSON-RPC requests.
 #[derive(Deserialize, Debug)]
 struct RpcRequest {
+    id: Option<Value>,
     method: String,
 }
 
@@ -55,13 +55,12 @@ struct Config {
 impl Config {
     fn from_env() -> Self {
         Self {
-            zebra_url: env::var("ZEBRA_URL")
-                .unwrap_or_else(|_| defaults::ZEBRA_URL.to_string()),
-            zallet_url: env::var("ZALLET_URL")
-                .unwrap_or_else(|_| defaults::ZALLET_URL.to_string()),
+            zebra_url: env::var("ZEBRA_URL").unwrap_or_else(|_| defaults::ZEBRA_URL.to_string()),
+            zallet_url: env::var("ZALLET_URL").unwrap_or_else(|_| defaults::ZALLET_URL.to_string()),
             _zaino_url: env::var("ZAINO_URL").unwrap_or_else(|_| defaults::ZAINO_URL.to_string()),
             rpc_user: env::var("RPC_USER").unwrap_or_else(|_| defaults::RPC_USER.to_string()),
-            rpc_password: env::var("RPC_PASSWORD").unwrap_or_else(|_| defaults::RPC_PASSWORD.to_string()),
+            rpc_password: env::var("RPC_PASSWORD")
+                .unwrap_or_else(|_| defaults::RPC_PASSWORD.to_string()),
             cors_origin: env::var("CORS_ORIGIN")
                 .unwrap_or_else(|_| defaults::CORS_ORIGIN.to_string()),
             listen_port: env::var("LISTEN_PORT")
@@ -189,12 +188,26 @@ async fn handler(
     let target_url = if let Ok(rpc_req) = serde_json::from_slice::<RpcRequest>(&body_bytes) {
         if rpc_req.method == "rpc.discover" {
             info!("Routing rpc.discover to merged schema");
+            let Some(request_id) = rpc_req.id else {
+                return Ok(add_cors_headers(
+                    Response::builder()
+                        .status(StatusCode::NO_CONTENT)
+                        .body(Full::new(Bytes::new()))
+                        .expect("empty rpc.discover notification response should be valid"),
+                    &config.cors_origin,
+                ));
+            };
+            let response = json!({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": z3.merged,
+            });
 
             return Ok(add_cors_headers(
                 Response::builder()
                     .status(StatusCode::OK)
                     .header(hyper::header::CONTENT_TYPE, "application/json")
-                    .body(Full::new(Bytes::from(serde_json::to_string(&z3.merged)?)))
+                    .body(Full::new(Bytes::from(serde_json::to_string(&response)?)))
                     .expect("z3 merged schema response should be valid"),
                 &config.cors_origin,
             ));
