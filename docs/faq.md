@@ -41,11 +41,12 @@ For backups, the only thing worth keeping is the `z3-<network>-zallet` volume. I
 
 ### Q: How do I set up the Zallet wallet on mainnet or testnet?
 
-`scripts/regtest-init.sh` initializes the regtest wallet automatically. On mainnet and testnet, the node runs fine without an initialized wallet; set up Zallet's wallet encryption yourself, once per network, when you are ready to manage keys. Zallet runs as uid 1000 but the distroless image ships no data directory, so a freshly created volume is root-owned: make it writable once, then generate the identity and initialize encryption:
+`scripts/regtest-init.sh` initializes the regtest wallet automatically. On mainnet and testnet, the node runs fine without an initialized wallet; set up Zallet's wallet encryption yourself, once per network, when you are ready to manage keys. A normal stack start prepares the data volume through the `cookie-permissions` sidecar. If you initialize the wallet first with `--no-deps`, prepare the volume explicitly, then generate the identity and initialize encryption:
 
 ```bash
-# One-time: make the data volume writable by Zallet's uid (1000).
-docker run --rm -v z3-<network>-zallet:/data busybox chown 1000:1000 /data
+# One-time preparation for the no-deps path.
+docker run --rm -v z3-<network>-zallet:/data busybox \
+  sh -c 'touch /data/.z3-volume-initialized && chown 1000:1000 /data /data/.z3-volume-initialized'
 
 docker compose --env-file .env.<network> run --rm --no-deps zallet \
   --datadir /var/lib/zallet --config /etc/zallet/zallet.toml generate-encryption-identity
@@ -54,7 +55,7 @@ docker compose --env-file .env.<network> run --rm --no-deps zallet \
   --datadir /var/lib/zallet --config /etc/zallet/zallet.toml init-wallet-encryption
 ```
 
-`--no-deps` skips starting Zebra (encryption setup does not need it). `generate-encryption-identity` writes the age key into the `z3-<network>-zallet` volume and refuses to overwrite an existing identity, so re-running it is safe. Each network keeps its Zallet data in a separate volume, so run this once per network you use. Back up the volume (see the data question above): it holds both the wallet and the identity that decrypts it. Afterwards, use the Zallet RPC or `generate-mnemonic` to create or import keys.
+`--no-deps` skips starting Zebra and the volume-preparation sidecar because encryption setup does not need the node. The zero-byte marker prevents Docker from replacing the prepared ownership with platform-specific image-directory metadata on Zallet's first mount. `generate-encryption-identity` writes the age key into the `z3-<network>-zallet` volume and refuses to overwrite an existing identity, so re-running it is safe. Each network keeps its Zallet data in a separate volume, so run this once per network you use. Back up the volume (see the data question above): it holds both the wallet and the identity that decrypts it. Afterwards, use the Zallet RPC or `generate-mnemonic` to create or import keys.
 
 ---
 

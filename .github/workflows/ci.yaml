@@ -176,12 +176,25 @@ jobs:
 
       - name: Generate the encryption identity in-container
         # Exercises the real generate-encryption-identity command against the
-        # pinned image and asserts the key lands in the data volume owner-only
-        # (mode 0600). The distroless image ships no data dir, so a fresh named
-        # volume is root-owned; chown it to the zallet uid first, as the init
-        # scripts do.
+        # pinned image and asserts the sidecar prepares the data volume before
+        # the key lands there owner-only (mode 0600).
         run: |
-          docker run --rm -v z3-regtest-zallet:/d busybox chown 1000:1000 /d
+          docker compose --env-file .env.regtest up -d cookie-permissions
+          SIDECAR_ID="$(docker compose --env-file .env.regtest ps -q cookie-permissions)"
+          for i in $(seq 1 15); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' "$SIDECAR_ID")" = "healthy" ]; then
+              break
+            fi
+            if [ "$i" -eq 15 ]; then
+              docker compose --env-file .env.regtest logs cookie-permissions
+              exit 1
+            fi
+            sleep 2
+          done
+          OWNER="$(docker run --rm -v z3-regtest-zallet:/d busybox stat -c '%u:%g' /d)"
+          test "$OWNER" = "1000:1000"
+          docker run --rm -v z3-regtest-zallet:/d busybox \
+            test -f /d/.z3-volume-initialized
           docker compose --env-file .env.regtest run --rm --no-deps zallet \
             --datadir /var/lib/zallet --config /etc/zallet/zallet.toml \
             generate-encryption-identity
