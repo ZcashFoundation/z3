@@ -15,7 +15,7 @@ When an entry says "see README", the fix lives there; this FAQ only adds the dia
 
 ### Q: Why is my Zebra container marked `unhealthy` right after start?
 
-That's the `/ready` probe doing its job, not a fault. `/ready` requires the node to have at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` (default `1`) and to be within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` (default `2`) of the network tip. A fresh start from a cold chain, or a restart on a cache that's a few minutes behind, will report `unhealthy` until both thresholds are met.
+That's the `/ready` probe doing its job, not a fault. `/ready` requires the node to have at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` (default `1`) and to be within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` of the estimated network tip. Mainnet uses Zebra's default of `2`; Testnet uses `4` so its 75-second estimator aligns with the existing 5-minute stale-tip limit. A fresh start from a cold chain, or a restart on a cache that's a few minutes behind, will report `unhealthy` until the readiness checks pass.
 
 For development, `/healthy` is a looser signal that only checks peer connectivity. The tracked `docker-compose.override.yml.example` flips the healthcheck to `/healthy` so Zallet (and Zaino under the indexer profile) can start without waiting for full sync. Use it for dev, never for production where you want consumers to wait for a synced node.
 

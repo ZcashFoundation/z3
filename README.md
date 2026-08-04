@@ -387,7 +387,7 @@ Zebra exposes two endpoints on its health port:
 | Endpoint | Returns 200 when | Use for |
 |----------|-------------------|---------|
 | `/healthy` | Minimum peer connections present | Liveness monitoring, restart decisions |
-| `/ready` | Synced within 2 blocks of tip | Production readiness, dependency gating |
+| `/ready` | Synced within the network's configured lag and tip-age limits | Production readiness, dependency gating |
 
 ### Service dependency chain
 
@@ -413,8 +413,9 @@ docker compose --env-file .env.mainnet logs -f zebra
 Three Zebra healthcheck thresholds are operator-tunable. Defaults live in `docker-compose.yml`; override in `.env`:
 
 ```bash
-# How far behind tip /ready tolerates (raise during catch-up syncs)
-ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND=10
+# Mainnet defaults to 2 blocks. Testnet uses 4 blocks so its 75-second
+# estimator aligns with the 5-minute stale-tip limit.
+ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND=4
 
 # Minimum peers required for /healthy (set 0 for regtest)
 ZEBRA_HEALTH__MIN_CONNECTED_PEERS=3

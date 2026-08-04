@@ -62,7 +62,7 @@ Operational details worth knowing:
 
 - **Zaino's check is a TCP probe on the gRPC port.** It confirms a listener exists; it does not validate the gRPC handler. Do not use it for production routing decisions.
 - **Zallet has no healthcheck.** Its distroless image has no shell or probe binary, so `depends_on: condition: service_healthy` against Zallet hangs. Gate on Zebra's `/ready` instead and assume Zallet follows.
-- **`/ready` is sync-strict; `/healthy` is peer-only.** `/healthy` returns success when Zebra has at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` peers; `/ready` additionally requires sync within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` of tip. Use `/ready` for production; the tracked `docker-compose.override.yml.example` flips to `/healthy` for development.
+- **`/ready` is sync-strict; `/healthy` is peer-only.** `/healthy` returns success when Zebra has at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` peers; `/ready` additionally requires sync within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` of tip. Mainnet keeps Zebra's 2-block default. Testnet sets 4 blocks so the 75-second height estimator reaches the existing 5-minute stale-tip boundary before lag alone closes the route. Use `/ready` for production; the tracked `docker-compose.override.yml.example` flips to `/healthy` for development.
 
 Inside the Docker network, consumers wait on Zebra via `depends_on` with `condition: service_healthy`. Outside the network, consumers poll the published health port (per-network number in `z3-contract.yaml`).
 
