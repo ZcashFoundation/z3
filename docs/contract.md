@@ -62,7 +62,7 @@ Operational details worth knowing:
 
 - **Zaino's check is a TCP probe on the gRPC port.** It confirms a listener exists; it does not validate the gRPC handler. Do not use it for production routing decisions.
 - **Zallet has no healthcheck.** Its distroless image has no shell or probe binary, so `depends_on: condition: service_healthy` against Zallet hangs. Gate on Zebra's `/ready` instead and assume Zallet follows.
-- **`/ready` is sync-strict; `/healthy` is peer-only.** `/healthy` returns success when Zebra has at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` peers; `/ready` additionally requires sync within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND` of tip. Mainnet keeps Zebra's 2-block default. Testnet sets 4 blocks so the 75-second height estimator reaches the existing 5-minute stale-tip boundary before lag alone closes the route. Use `/ready` for production; the tracked `docker-compose.override.yml.example` flips to `/healthy` for development.
+- **`/ready` is sync-strict; `/healthy` is peer-only.** `/healthy` returns success when Zebra has at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` peers. `/ready` independently requires that peer minimum, a sync status close to tip, a present chain tip, a local tip age within `ready_max_tip_age`, and estimated lag within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND`. Estimated lag extrapolates from the best tip's header timestamp; tip age measures elapsed time since Zebra's local height increased, so the two checks do not share a clock. Mainnet keeps Zebra's 2-block default. Testnet uses 4 blocks as the bounded correction for an observed `lag=3` transition during a canonically current 225-second gap; release evidence must validate the header-time offset and both failure boundaries independently. Use `/ready` for production; the tracked `docker-compose.override.yml.example` flips to `/healthy` for development.
 
 Inside the Docker network, consumers wait on Zebra via `depends_on` with `condition: service_healthy`. Outside the network, consumers poll the published health port (per-network number in `z3-contract.yaml`).
 
@@ -107,7 +107,7 @@ These files are tracked defaults. Operators should not edit them; doing so creat
 | `docker-compose.yml`, `docker-compose.regtest.yml`, `docker-compose.build.yml` | Stack topology and the opt-in source-build overlay. Override via `docker-compose.override.yml` (see below). |
 | `z3-contract.yaml`, `z3-contract.schema.json`, `docs/contract.md` | The contract, its schema, and this guide. |
 | `.env.example` | Reference for every public env var. |
-| `.env.mainnet`, `.env.testnet`, `.env.regtest` | Per-network defaults. Override via `.env`. |
+| `.env.mainnet`, `.env.testnet`, `.env.regtest` | Per-network defaults. A command that omits `--env-file` can take operator overrides from the auto-loaded `.env`; a command that selects a network file takes overrides from the invoking shell or an operator-selected env file. |
 | `config/<network>/zallet.toml.example` | Zallet config template. |
 | `config/<network>/zaino.toml.example` | Zaino config template. |
 

@@ -387,7 +387,7 @@ Zebra exposes two endpoints on its health port:
 | Endpoint | Returns 200 when | Use for |
 |----------|-------------------|---------|
 | `/healthy` | Minimum peer connections present | Liveness monitoring, restart decisions |
-| `/ready` | Synced within the network's configured lag and tip-age limits | Production readiness, dependency gating |
+| `/ready` | Minimum peers are present, sync status is close to tip, a chain tip exists, and both local tip age and header-time-derived estimated lag are within their configured limits | Production readiness, dependency gating |
 
 ### Service dependency chain
 
@@ -410,11 +410,22 @@ docker compose --env-file .env.mainnet logs -f zebra
 
 ### Tuning health checks
 
-Three Zebra healthcheck thresholds are operator-tunable. Defaults live in `docker-compose.yml`; override in `.env`:
+Zebra's health settings are operator-tunable. Compose resolves the explicit
+service environment from the invoking shell and the selected `--env-file`.
+The service-level `.env` file cannot override values already present in that
+explicit environment block. For a one-command override, set the value in the
+shell:
 
 ```bash
-# Mainnet defaults to 2 blocks. Testnet uses 4 blocks so its 75-second
-# estimator aligns with the 5-minute stale-tip limit.
+ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND=5 \
+  docker compose --env-file .env.testnet up -d zebra
+```
+
+The tracked defaults are:
+
+```bash
+# Mainnet defaults to 2 blocks. Testnet uses 4 to tolerate the observed lag=3
+# transition during a canonically current 225-second block gap.
 ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND=4
 
 # Minimum peers required for /healthy (set 0 for regtest)
