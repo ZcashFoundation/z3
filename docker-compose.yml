@@ -6,7 +6,9 @@
 #   docker compose --env-file .env.regtest up -d
 #
 # Default invocation (no --env-file) brings up mainnet.
-# Operator-specific overrides go in .env (auto-loaded, gitignored).
+# Operator-specific overrides go in .env for the default invocation. Commands
+# that pass --env-file resolve explicit service values from that selected file
+# and the invoking shell; see README "Tuning health checks".
 #
 # Public contract identifiers (network, volume, port names) are defined in
 # z3-contract.yaml. Image pins below have inline fallbacks and can be
