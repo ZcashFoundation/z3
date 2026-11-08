@@ -1,4 +1,4 @@
-//! RPC Router for Zebra, Zallet and Zaino.
+//! RPC Router for Zebra and Zallet.
 //!
 //! This service listens for JSON-RPC requests and routes them to the appropriate backend
 //! based on the method being called. It merges the OpenRPC schemas from Zebra and Zallet
@@ -45,7 +45,6 @@ struct RpcRequest {
 struct Config {
     zebra_url: String,
     zallet_url: String,
-    _zaino_url: String,
     rpc_user: String,
     rpc_password: String,
     cors_origin: String,
@@ -57,7 +56,6 @@ impl Config {
         Self {
             zebra_url: env::var("ZEBRA_URL").unwrap_or_else(|_| defaults::ZEBRA_URL.to_string()),
             zallet_url: env::var("ZALLET_URL").unwrap_or_else(|_| defaults::ZALLET_URL.to_string()),
-            _zaino_url: env::var("ZAINO_URL").unwrap_or_else(|_| defaults::ZAINO_URL.to_string()),
             rpc_user: env::var("RPC_USER").unwrap_or_else(|_| defaults::RPC_USER.to_string()),
             rpc_password: env::var("RPC_PASSWORD")
                 .unwrap_or_else(|_| defaults::RPC_PASSWORD.to_string()),
@@ -301,6 +299,56 @@ fn annotate_methods_with_server(methods: &mut Vec<Value>, server_name: &str) {
     }
 }
 
+/// The JSON pointer prefix of a reference to a component schema.
+const COMPONENT_SCHEMA_REF_PREFIX: &str = "#/components/schemas/";
+
+/// Prefixes every component schema name in `schema` with `<namespace>.`, and rewrites
+/// every `$ref` to a component schema to match.
+///
+/// Zebra and Zallet each name their component schemas after their Rust types, so both
+/// can publish a schema with the same name (for example `Amount`) and different
+/// contents. Namespacing keeps both in the merged document, so each backend's `$ref`s
+/// still point at its own definition.
+fn namespace_component_schemas(schema: &mut Value, namespace: &str) {
+    if let Some(schemas) = schema
+        .pointer_mut("/components/schemas")
+        .and_then(Value::as_object_mut)
+    {
+        *schemas = std::mem::take(schemas)
+            .into_iter()
+            .map(|(name, definition)| (format!("{namespace}.{name}"), definition))
+            .collect();
+    }
+
+    rewrite_component_refs(schema, namespace);
+}
+
+/// Rewrites every `$ref` to a component schema inside `value` to its namespaced name.
+fn rewrite_component_refs(value: &mut Value, namespace: &str) {
+    match value {
+        Value::Object(obj) => {
+            for (key, child) in obj.iter_mut() {
+                if key == "$ref" {
+                    if let Some(name) = child
+                        .as_str()
+                        .and_then(|r| r.strip_prefix(COMPONENT_SCHEMA_REF_PREFIX))
+                    {
+                        *child = json!(format!("{COMPONENT_SCHEMA_REF_PREFIX}{namespace}.{name}"));
+                    }
+                } else {
+                    rewrite_component_refs(child, namespace);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                rewrite_component_refs(item, namespace);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Merges the components.schemas from the given schema into the combined map.
 fn merge_components_schemas(schema: &Value, combined: &mut serde_json::Map<String, Value>) {
     if let Some(obj) = schema["components"]["schemas"].as_object() {
@@ -311,7 +359,12 @@ fn merge_components_schemas(schema: &Value, combined: &mut serde_json::Map<Strin
 }
 
 /// Merges the OpenRPC schemas from Zebra and Zallet.
-fn merge_openrpc_schemas(zebra: Value, zallet: Value) -> Result<Z3Schema> {
+fn merge_openrpc_schemas(mut zebra: Value, mut zallet: Value) -> Result<Z3Schema> {
+    // Keep each backend's component schemas apart, so a name both backends use
+    // can't overwrite the other's definition.
+    namespace_component_schemas(&mut zebra, "zebra");
+    namespace_component_schemas(&mut zallet, "zallet");
+
     // Extract method arrays
     let mut zebra_methods = extract_methods_array(&zebra);
     let mut zallet_methods = extract_methods_array(&zallet);

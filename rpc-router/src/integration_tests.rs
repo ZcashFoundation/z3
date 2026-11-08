@@ -75,21 +75,6 @@ async fn start_zallet_mock() -> MockServer {
     server
 }
 
-/// Starts a mock Zaino backend (generic fallback).
-async fn start_zaino_mock() -> MockServer {
-    let server = MockServer::start_async().await;
-
-    server
-        .mock_async(|when, then| {
-            when.method(POST);
-            then.status(200)
-                .json_body(json!({ "jsonrpc": "2.0", "id": 1, "result": "zaino-response" }));
-        })
-        .await;
-
-    server
-}
-
 // --- Router startup helper ---
 
 struct RouterHandle {
@@ -103,11 +88,10 @@ impl Drop for RouterHandle {
     }
 }
 
-async fn start_router(zebra_url: &str, zallet_url: &str, zaino_url: &str) -> RouterHandle {
+async fn start_router(zebra_url: &str, zallet_url: &str) -> RouterHandle {
     let config = Arc::new(Config {
         zebra_url: zebra_url.to_string(),
         zallet_url: zallet_url.to_string(),
-        _zaino_url: zaino_url.to_string(),
         listen_port: 0,
         rpc_user: "zebra".to_string(),
         rpc_password: "zebra".to_string(),
@@ -146,8 +130,7 @@ async fn start_router(zebra_url: &str, zallet_url: &str, zaino_url: &str) -> Rou
 async fn test_health_check() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .get(format!("http://127.0.0.1:{}/health", router.port))
@@ -163,8 +146,7 @@ async fn test_health_check() {
 async fn test_non_post_returns_405() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .get(format!("http://127.0.0.1:{}/", router.port))
@@ -179,8 +161,7 @@ async fn test_non_post_returns_405() {
 async fn test_cors_preflight_returns_204_with_headers() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .request(
@@ -200,8 +181,7 @@ async fn test_cors_preflight_returns_204_with_headers() {
 async fn test_rpc_discover_returns_merged_schema_in_json_rpc_envelope() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
@@ -236,8 +216,7 @@ async fn test_rpc_discover_returns_merged_schema_in_json_rpc_envelope() {
 async fn test_rpc_discover_notification_returns_no_content() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
@@ -258,8 +237,7 @@ async fn test_rpc_discover_notification_returns_no_content() {
 async fn test_zebra_method_routing() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
@@ -277,8 +255,7 @@ async fn test_zebra_method_routing() {
 async fn test_zallet_method_routing() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
@@ -296,8 +273,7 @@ async fn test_zallet_method_routing() {
 async fn test_notification_without_id_still_routes_by_method() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
@@ -319,8 +295,7 @@ async fn test_notification_without_id_still_routes_by_method() {
 async fn test_unknown_method_falls_back_to_zebra() {
     let zebra = start_zebra_mock().await;
     let zallet = start_zallet_mock().await;
-    let zaino = start_zaino_mock().await;
-    let router = start_router(&zebra.base_url(), &zallet.base_url(), &zaino.base_url()).await;
+    let router = start_router(&zebra.base_url(), &zallet.base_url()).await;
 
     let resp = Client::new()
         .post(format!("http://127.0.0.1:{}/", router.port))
