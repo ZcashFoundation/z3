@@ -5,8 +5,6 @@ pub(crate) const ZEBRA_URL: &str = "http://127.0.0.1:20251";
 
 pub(crate) const ZALLET_URL: &str = "http://127.0.0.1:25251";
 
-pub(crate) const ZAINO_URL: &str = "http://zaino:8237";
-
 pub(crate) const RPC_USER: &str = "zebra";
 
 pub(crate) const RPC_PASSWORD: &str = "zebra";

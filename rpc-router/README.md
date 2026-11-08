@@ -13,6 +13,8 @@ In addition to request routing, the router also:
 
 - Calls `rpc.discover` on both Zebra and Zallet at startup
 - Builds a merged OpenRPC schema for the Z3 stack
+- Prefixes each backend's component schema names (`zebra.Output`, `zallet.Output`) and rewrites their `$ref`s, so types both backends name the same stay distinct
+- Replaces non-alphanumeric characters in those names with `_` and replaces a backend's remote OpenRPC meta-schema `$ref` with a plain object schema, so the merged schema loads in the OpenRPC playground
 - Exposes the merged schema via its own `rpc.discover` method
 
 ## Developer Usage

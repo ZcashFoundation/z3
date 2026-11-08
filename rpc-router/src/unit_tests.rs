@@ -124,8 +124,130 @@ fn test_merge_openrpc_schemas_methods_annotated() {
 fn test_merge_openrpc_schemas_components_merged() {
     let z3 = merge_openrpc_schemas(zebra_schema(), zallet_schema()).unwrap();
     let schemas = &z3.merged["components"]["schemas"];
-    assert!(schemas.get("BlockHash").is_some());
-    assert!(schemas.get("WalletInfo").is_some());
+    assert!(schemas.get("zebra.BlockHash").is_some());
+    assert!(schemas.get("zallet.WalletInfo").is_some());
+    assert!(schemas.get("BlockHash").is_none());
+}
+
+#[test]
+fn test_merge_openrpc_schemas_keeps_both_definitions_of_a_shared_name() {
+    let zebra = json!({
+        "openrpc": "1.2.6",
+        "methods": [{
+            "name": "getblocksubsidy",
+            "params": [],
+            "result": { "name": "subsidy", "schema": { "$ref": "#/components/schemas/Amount" } }
+        }],
+        "components": { "schemas": { "Amount": { "type": "integer" } } }
+    });
+    let zallet = json!({
+        "openrpc": "1.3.2",
+        "methods": [{
+            "name": "z_getbalance",
+            "params": [],
+            "result": { "name": "balance", "schema": { "$ref": "#/components/schemas/Amount" } }
+        }],
+        "components": { "schemas": { "Amount": { "type": "number" } } }
+    });
+
+    let z3 = merge_openrpc_schemas(zebra, zallet).unwrap();
+    let schemas = &z3.merged["components"]["schemas"];
+    assert_eq!(schemas["zebra.Amount"]["type"], "integer");
+    assert_eq!(schemas["zallet.Amount"]["type"], "number");
+
+    let methods = z3.merged["methods"].as_array().unwrap();
+    assert_eq!(
+        methods[0]["result"]["schema"]["$ref"],
+        "#/components/schemas/zebra.Amount"
+    );
+    assert_eq!(
+        methods[1]["result"]["schema"]["$ref"],
+        "#/components/schemas/zallet.Amount"
+    );
+}
+
+#[test]
+fn test_merge_openrpc_schemas_routing_uses_unprefixed_method_names() {
+    let z3 = merge_openrpc_schemas(zebra_schema(), zallet_schema()).unwrap();
+    assert!(z3.zebra_methods.iter().any(|m| m["name"] == "getblock"));
+    assert!(z3.zallet_methods.iter().any(|m| m["name"] == "z_sendmany"));
+}
+
+// --- namespace_component_schemas ---
+
+#[test]
+fn test_namespace_rewrites_refs_nested_in_component_schemas() {
+    let mut schema = json!({
+        "methods": [{
+            "name": "getblock",
+            "params": [{ "name": "verbosity", "schema": { "$ref": "#/components/schemas/Verbosity" } }],
+            "result": { "name": "block", "schema": {
+                "oneOf": [
+                    { "$ref": "#/components/schemas/BlockObject" },
+                    { "type": "string" }
+                ]
+            } }
+        }],
+        "components": { "schemas": {
+            "Verbosity": { "type": "integer" },
+            "BlockObject": {
+                "type": "object",
+                "properties": {
+                    "hash": { "$ref": "#/components/schemas/Hash" },
+                    "tx": { "type": "array", "items": { "$ref": "#/components/schemas/Hash" } }
+                }
+            },
+            "Hash": { "type": "string" }
+        } }
+    });
+
+    namespace_component_schemas(&mut schema, "zebra");
+
+    let schemas = schema["components"]["schemas"].as_object().unwrap();
+    let mut names: Vec<_> = schemas.keys().cloned().collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["zebra.BlockObject", "zebra.Hash", "zebra.Verbosity"]
+    );
+
+    let method = &schema["methods"][0];
+    assert_eq!(
+        method["params"][0]["schema"]["$ref"],
+        "#/components/schemas/zebra.Verbosity"
+    );
+    assert_eq!(
+        method["result"]["schema"]["oneOf"][0]["$ref"],
+        "#/components/schemas/zebra.BlockObject"
+    );
+    let block = &schemas["zebra.BlockObject"]["properties"];
+    assert_eq!(block["hash"]["$ref"], "#/components/schemas/zebra.Hash");
+    assert_eq!(
+        block["tx"]["items"]["$ref"],
+        "#/components/schemas/zebra.Hash"
+    );
+}
+
+#[test]
+fn test_namespace_leaves_other_refs_alone() {
+    let mut schema = json!({
+        "methods": [{
+            "name": "m",
+            "result": { "name": "r", "schema": { "$ref": "https://example.com/schema.json" } }
+        }]
+    });
+    namespace_component_schemas(&mut schema, "zebra");
+    assert_eq!(
+        schema["methods"][0]["result"]["schema"]["$ref"],
+        "https://example.com/schema.json"
+    );
+}
+
+#[test]
+fn test_namespace_without_components_does_not_panic() {
+    let mut schema = json!({ "methods": [] });
+    namespace_component_schemas(&mut schema, "zallet");
+    assert!(schema.get("components").is_none());
 }
 
 #[test]
@@ -157,4 +279,74 @@ fn test_config_from_env_reads_rpc_credentials() {
     assert_eq!(config.rpc_password, "s3cr3t");
     env::remove_var("RPC_USER");
     env::remove_var("RPC_PASSWORD");
+}
+
+#[test]
+fn test_namespace_sanitizes_names_and_decodes_percent_encoded_refs() {
+    let mut schema = json!({
+        "methods": [{
+            "name": "m",
+            "result": { "name": "r", "schema": { "$ref": "#/components/schemas/Block%20Info" } }
+        }],
+        "components": { "schemas": { "Block Info": { "type": "object" } } }
+    });
+    namespace_component_schemas(&mut schema, "zallet");
+
+    assert!(schema["components"]["schemas"]["zallet.Block_Info"].is_object());
+    assert_eq!(
+        schema["methods"][0]["result"]["schema"]["$ref"],
+        "#/components/schemas/zallet.Block_Info"
+    );
+}
+
+#[test]
+fn test_namespace_replaces_remote_openrpc_meta_schema() {
+    // The `rpc.discover` result schema Zallet 0.1.0-beta.1 publishes.
+    let mut schema = json!({
+        "methods": [{
+            "name": "rpc.discover",
+            "result": { "name": "OpenRPC Schema", "schema": { "$ref": "#/components/schemas/OpenRPC%20Schema" } }
+        }],
+        "components": { "schemas": {
+            "OpenRPC Schema": {
+                "$ref": "https://raw.githubusercontent.com/open-rpc/meta-schema/master/schema.json"
+            }
+        } }
+    });
+    namespace_component_schemas(&mut schema, "zallet");
+
+    let schemas = schema["components"]["schemas"].as_object().unwrap();
+    assert_eq!(schemas.len(), 1);
+    assert_eq!(schemas["zallet.OpenRpcDocument"]["type"], "object");
+    assert!(!schema.to_string().contains("raw.githubusercontent.com"));
+    assert_eq!(
+        schema["methods"][0]["result"]["schema"]["$ref"],
+        "#/components/schemas/zallet.OpenRpcDocument"
+    );
+}
+
+#[test]
+fn test_namespace_keeps_names_apart_when_sanitizing_collides() {
+    let mut schema = json!({
+        "components": { "schemas": {
+            "A B": { "type": "string" },
+            "A_B": { "type": "integer" }
+        } }
+    });
+    namespace_component_schemas(&mut schema, "zebra");
+    assert_eq!(
+        schema["components"]["schemas"].as_object().unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn test_decode_ref_component_name() {
+    assert_eq!(
+        decode_ref_component_name("OpenRPC%20Schema"),
+        "OpenRPC Schema"
+    );
+    assert_eq!(decode_ref_component_name("a~1b~0c"), "a/b~c");
+    assert_eq!(decode_ref_component_name("bad%zz"), "bad%zz");
+    assert_eq!(decode_ref_component_name("Plain"), "Plain");
 }

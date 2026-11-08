@@ -1,4 +1,4 @@
-//! RPC Router for Zebra, Zallet and Zaino.
+//! RPC Router for Zebra and Zallet.
 //!
 //! This service listens for JSON-RPC requests and routes them to the appropriate backend
 //! based on the method being called. It merges the OpenRPC schemas from Zebra and Zallet
@@ -45,7 +45,6 @@ struct RpcRequest {
 struct Config {
     zebra_url: String,
     zallet_url: String,
-    _zaino_url: String,
     rpc_user: String,
     rpc_password: String,
     cors_origin: String,
@@ -57,7 +56,6 @@ impl Config {
         Self {
             zebra_url: env::var("ZEBRA_URL").unwrap_or_else(|_| defaults::ZEBRA_URL.to_string()),
             zallet_url: env::var("ZALLET_URL").unwrap_or_else(|_| defaults::ZALLET_URL.to_string()),
-            _zaino_url: env::var("ZAINO_URL").unwrap_or_else(|_| defaults::ZAINO_URL.to_string()),
             rpc_user: env::var("RPC_USER").unwrap_or_else(|_| defaults::RPC_USER.to_string()),
             rpc_password: env::var("RPC_PASSWORD")
                 .unwrap_or_else(|_| defaults::RPC_PASSWORD.to_string()),
@@ -301,6 +299,148 @@ fn annotate_methods_with_server(methods: &mut Vec<Value>, server_name: &str) {
     }
 }
 
+/// The JSON pointer prefix of a reference to a component schema.
+const COMPONENT_SCHEMA_REF_PREFIX: &str = "#/components/schemas/";
+
+/// The name the merged document uses for a backend's schema of an OpenRPC document
+/// (the result of `rpc.discover`), after its namespace.
+const OPENRPC_DOCUMENT_SCHEMA_NAME: &str = "OpenRpcDocument";
+
+/// Prefixes every component schema name in `schema` with `<namespace>.`, and rewrites
+/// every `$ref` to a component schema to match.
+///
+/// Zebra and Zallet each name their component schemas after their Rust types, so both
+/// can publish a schema with the same name (for example `Output`) and different
+/// contents. Namespacing keeps both in the merged document, so each backend's `$ref`s
+/// still point at its own definition.
+///
+/// Names are also made safe for OpenRPC tooling: characters outside the component name
+/// pattern (`^[a-zA-Z0-9._-]+$`) become `_`, and percent-encoded `$ref`s are decoded
+/// before lookup. A component that only references the remote OpenRPC meta-schema is
+/// replaced by a plain object schema, because the OpenRPC playground can't render the
+/// remote, self-referencing meta-schema.
+fn namespace_component_schemas(schema: &mut Value, namespace: &str) {
+    let mut renames = std::collections::HashMap::new();
+
+    if let Some(schemas) = schema
+        .pointer_mut("/components/schemas")
+        .and_then(Value::as_object_mut)
+    {
+        let mut namespaced = serde_json::Map::new();
+        for (name, mut definition) in std::mem::take(schemas) {
+            let local_name = if is_openrpc_meta_schema_ref(&definition) {
+                definition = json!({
+                    "description": "An OpenRPC document, as defined by https://spec.open-rpc.org/.",
+                    "type": "object",
+                });
+                OPENRPC_DOCUMENT_SCHEMA_NAME.to_string()
+            } else {
+                sanitize_component_name(&name)
+            };
+
+            let mut new_name = format!("{namespace}.{local_name}");
+            let mut suffix = 2;
+            while namespaced.contains_key(&new_name) {
+                new_name = format!("{namespace}.{local_name}_{suffix}");
+                suffix += 1;
+            }
+
+            namespaced.insert(new_name.clone(), definition);
+            renames.insert(name, new_name);
+        }
+        *schemas = namespaced;
+    }
+
+    rewrite_component_refs(schema, namespace, &renames);
+}
+
+/// Returns true if `definition` is only a `$ref` to the remote OpenRPC meta-schema.
+fn is_openrpc_meta_schema_ref(definition: &Value) -> bool {
+    definition.as_object().is_some_and(|obj| {
+        obj.len() == 1
+            && obj
+                .get("$ref")
+                .and_then(Value::as_str)
+                .is_some_and(|r| r.starts_with("http") && r.contains("open-rpc/meta-schema"))
+    })
+}
+
+/// Replaces every character outside the OpenRPC component name pattern with `_`.
+fn sanitize_component_name(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Decodes a component name from a `$ref` fragment: percent-encoding first (it is a URI
+/// fragment), then the JSON pointer escapes `~1` (`/`) and `~0` (`~`).
+fn decode_ref_component_name(encoded: &str) -> String {
+    let bytes = encoded.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if let Some(byte) = encoded
+                .get(i + 1..i + 3)
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            {
+                decoded.push(byte);
+                i += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[i]);
+        i += 1;
+    }
+
+    String::from_utf8_lossy(&decoded)
+        .replace("~1", "/")
+        .replace("~0", "~")
+}
+
+/// Rewrites every `$ref` to a component schema inside `value` to its namespaced name.
+///
+/// A `$ref` to a name the backend didn't define keeps pointing at a missing component,
+/// under the namespaced, sanitized name.
+fn rewrite_component_refs(
+    value: &mut Value,
+    namespace: &str,
+    renames: &std::collections::HashMap<String, String>,
+) {
+    match value {
+        Value::Object(obj) => {
+            for (key, child) in obj.iter_mut() {
+                if key == "$ref" {
+                    if let Some(encoded) = child
+                        .as_str()
+                        .and_then(|r| r.strip_prefix(COMPONENT_SCHEMA_REF_PREFIX))
+                    {
+                        let name = decode_ref_component_name(encoded);
+                        let new_name = renames.get(&name).cloned().unwrap_or_else(|| {
+                            format!("{namespace}.{}", sanitize_component_name(&name))
+                        });
+                        *child = json!(format!("{COMPONENT_SCHEMA_REF_PREFIX}{new_name}"));
+                    }
+                } else {
+                    rewrite_component_refs(child, namespace, renames);
+                }
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                rewrite_component_refs(item, namespace, renames);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Merges the components.schemas from the given schema into the combined map.
 fn merge_components_schemas(schema: &Value, combined: &mut serde_json::Map<String, Value>) {
     if let Some(obj) = schema["components"]["schemas"].as_object() {
@@ -311,7 +451,12 @@ fn merge_components_schemas(schema: &Value, combined: &mut serde_json::Map<Strin
 }
 
 /// Merges the OpenRPC schemas from Zebra and Zallet.
-fn merge_openrpc_schemas(zebra: Value, zallet: Value) -> Result<Z3Schema> {
+fn merge_openrpc_schemas(mut zebra: Value, mut zallet: Value) -> Result<Z3Schema> {
+    // Keep each backend's component schemas apart, so a name both backends use
+    // can't overwrite the other's definition.
+    namespace_component_schemas(&mut zebra, "zebra");
+    namespace_component_schemas(&mut zallet, "zallet");
+
     // Extract method arrays
     let mut zebra_methods = extract_methods_array(&zebra);
     let mut zallet_methods = extract_methods_array(&zallet);
