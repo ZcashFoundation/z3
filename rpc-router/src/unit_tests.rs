@@ -280,3 +280,73 @@ fn test_config_from_env_reads_rpc_credentials() {
     env::remove_var("RPC_USER");
     env::remove_var("RPC_PASSWORD");
 }
+
+#[test]
+fn test_namespace_sanitizes_names_and_decodes_percent_encoded_refs() {
+    let mut schema = json!({
+        "methods": [{
+            "name": "m",
+            "result": { "name": "r", "schema": { "$ref": "#/components/schemas/Block%20Info" } }
+        }],
+        "components": { "schemas": { "Block Info": { "type": "object" } } }
+    });
+    namespace_component_schemas(&mut schema, "zallet");
+
+    assert!(schema["components"]["schemas"]["zallet.Block_Info"].is_object());
+    assert_eq!(
+        schema["methods"][0]["result"]["schema"]["$ref"],
+        "#/components/schemas/zallet.Block_Info"
+    );
+}
+
+#[test]
+fn test_namespace_replaces_remote_openrpc_meta_schema() {
+    // The `rpc.discover` result schema Zallet 0.1.0-beta.1 publishes.
+    let mut schema = json!({
+        "methods": [{
+            "name": "rpc.discover",
+            "result": { "name": "OpenRPC Schema", "schema": { "$ref": "#/components/schemas/OpenRPC%20Schema" } }
+        }],
+        "components": { "schemas": {
+            "OpenRPC Schema": {
+                "$ref": "https://raw.githubusercontent.com/open-rpc/meta-schema/master/schema.json"
+            }
+        } }
+    });
+    namespace_component_schemas(&mut schema, "zallet");
+
+    let schemas = schema["components"]["schemas"].as_object().unwrap();
+    assert_eq!(schemas.len(), 1);
+    assert_eq!(schemas["zallet.OpenRpcDocument"]["type"], "object");
+    assert!(!schema.to_string().contains("raw.githubusercontent.com"));
+    assert_eq!(
+        schema["methods"][0]["result"]["schema"]["$ref"],
+        "#/components/schemas/zallet.OpenRpcDocument"
+    );
+}
+
+#[test]
+fn test_namespace_keeps_names_apart_when_sanitizing_collides() {
+    let mut schema = json!({
+        "components": { "schemas": {
+            "A B": { "type": "string" },
+            "A_B": { "type": "integer" }
+        } }
+    });
+    namespace_component_schemas(&mut schema, "zebra");
+    assert_eq!(
+        schema["components"]["schemas"].as_object().unwrap().len(),
+        2
+    );
+}
+
+#[test]
+fn test_decode_ref_component_name() {
+    assert_eq!(
+        decode_ref_component_name("OpenRPC%20Schema"),
+        "OpenRPC Schema"
+    );
+    assert_eq!(decode_ref_component_name("a~1b~0c"), "a/b~c");
+    assert_eq!(decode_ref_component_name("bad%zz"), "bad%zz");
+    assert_eq!(decode_ref_component_name("Plain"), "Plain");
+}
