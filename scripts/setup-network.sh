@@ -64,10 +64,12 @@ ensure_toml_readable() {
     log "==> $NETWORK/$file: ensured readable by service containers."
 }
 
-mkdir -p "$CONFIG_DIR"
+# tls/ = zingod certificate pair (pre-created so Docker does not create it root-owned)
+mkdir -p "$CONFIG_DIR/tls"
 
 copy_template zaino.toml
 copy_template zallet.toml
+copy_template zingod.toml
 # Regtest needs a Zebra TOML to activate upgrades through NU6.3 at height 2.
 # Mainnet and testnet use Zebra's built-in network defaults.
 if [ "$NETWORK" = "regtest" ]; then
@@ -75,6 +77,7 @@ if [ "$NETWORK" = "regtest" ]; then
 fi
 ensure_toml_readable zaino.toml
 ensure_toml_readable zallet.toml
+ensure_toml_readable zingod.toml
 if [ "$NETWORK" = "regtest" ]; then
     ensure_toml_readable zebra.toml
 fi

@@ -21,13 +21,14 @@ jobs:
           persist-credentials: false
 
       - name: Stage local config files for compose render
-        # The live config/<net>/{zallet,zaino}.toml files are gitignored, but
+        # The live config/<net>/{zallet,zaino,zingod}.toml files are gitignored, but
         # docker compose config validates bind-mount source existence. Copy the
         # templates into place.
         run: |
           for net in mainnet testnet regtest; do
             cp config/$net/zallet.toml.example config/$net/zallet.toml
             cp config/$net/zaino.toml.example config/$net/zaino.toml
+            cp config/$net/zingod.toml.example config/$net/zingod.toml
           done
 
       - name: Validate compose for every network
@@ -41,6 +42,9 @@ jobs:
           docker compose --env-file .env.mainnet --profile indexer config --quiet
           docker compose --env-file .env.testnet --profile indexer config --quiet
           docker compose --env-file .env.regtest --profile indexer config --quiet
+          docker compose --env-file .env.mainnet --profile zingod config --quiet
+          docker compose --env-file .env.testnet --profile zingod config --quiet
+          docker compose --env-file .env.regtest --profile zingod config --quiet
 
       - name: Install Python deps (contract parser + JSON Schema validator)
         run: python3 -m pip install --quiet pyyaml jsonschema

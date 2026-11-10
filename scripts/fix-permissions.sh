@@ -6,7 +6,7 @@
 # Usage:
 #   ./fix-permissions.sh <service> <directory_path>
 #
-# Services: zebra, zaino, zallet, cookie
+# Services: zebra, zaino, zingod, zallet, cookie
 #
 # Examples:
 #   ./fix-permissions.sh zebra /mnt/ssd/zebra-state
@@ -28,6 +28,8 @@ ZEBRA_UID=10001
 ZEBRA_GID=10001
 ZAINO_UID=1000
 ZAINO_GID=1000
+ZINGOD_UID=1000
+ZINGOD_GID=1000
 ZALLET_UID=1000
 ZALLET_GID=1000
 
@@ -38,6 +40,7 @@ usage() {
     echo "Services:"
     echo "  zebra   - Zebra blockchain state (UID:GID 10001:10001, perms 700)"
     echo "  zaino   - Zaino indexer data (UID:GID 1000:1000, perms 700)"
+    echo "  zingod  - Zingod indexer data (UID:GID 1000:1000, perms 700)"
     echo "  zallet  - Zallet wallet data (UID:GID 1000:1000, perms 700)"
     echo "  cookie  - Shared cookie directory (UID:GID 10001:10001, perms 750)"
     echo ""
@@ -66,6 +69,11 @@ case "$SERVICE" in
     zaino)
         OWNER_UID=$ZAINO_UID
         OWNER_GID=$ZAINO_GID
+        PERMS=700
+        ;;
+    zingod)
+        OWNER_UID=$ZINGOD_UID
+        OWNER_GID=$ZINGOD_GID
         PERMS=700
         ;;
     zallet)
@@ -125,6 +133,9 @@ case "$SERVICE" in
         ;;
     zaino)
         echo "  Z3_ZAINO_DATA_PATH=${DIR_PATH}"
+        ;;
+    zingod)
+        echo "  Z3_ZINGOD_DATA_PATH=${DIR_PATH}"
         ;;
     zallet)
         echo "  Z3_ZALLET_DATA_PATH=${DIR_PATH}"

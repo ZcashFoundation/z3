@@ -36,13 +36,13 @@ Of these, `cookie` is part of the consumer-facing attachment surface only when t
 
 ### In-network DNS
 
-Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zallet`). The YAML's `service_dns:` block carries the full list. `zaino` resolves only when the `indexer` profile is active; its entry carries a `profile:` field.
+Inside the Docker network, services resolve at their bare service name (`zebra`, `zaino`, `zingod`, `zallet`). The YAML's `service_dns:` block carries the full list. `zaino` resolves only when the `indexer` profile is active and `zingod` only when the `zingod` profile is active; their entries carry a `profile:` field.
 
 No per-network suffix: the network itself is the discriminator. A consumer attached to `z3-testnet` uses `http://zebra:18232`; on `z3-mainnet` it uses `http://zebra:8232`.
 
 ### Cookie file
 
-The path is `/var/run/auth/.cookie` on every container that uses cookie auth. Mainnet and testnet publish `rpc_auth.mode: cookie`; Z3's Zebra writes the cookie, and Z3's Zaino, Zallet, and any consumer attached to the cookie volume mount it read-only at this path.
+The path is `/var/run/auth/.cookie` on every container that uses cookie auth. Mainnet and testnet publish `rpc_auth.mode: cookie`; Z3's Zebra writes the cookie, and Z3's Zaino, Zingod, Zallet, and any consumer attached to the cookie volume mount it read-only at this path.
 
 Regtest is the exception: it publishes `rpc_auth.mode: username_password`, sets `ZEBRA_RPC__ENABLE_COOKIE_AUTH=false`, and the regtest overlay removes the cookie mount from Zaino and Zallet. Zebra does not guarantee `/var/run/auth/.cookie` on regtest. Regtest consumers should use the documented username/password path, usually through the rpc-router defaults (`zebra` / `zebra`) or the per-service regtest config.
 
@@ -50,7 +50,7 @@ Regtest is the exception: it publishes `rpc_auth.mode: username_password`, sets 
 
 Container ports follow Zebra's per-network defaults from upstream (`zebra-chain/src/parameters/network.rs:239`, `zebra-rpc/src/config/rpc.rs:17-47`). Host ports are explicit and globally unique across all published services and optional profiles, so all three networks coexist on one host. The full matrix (including the `monitoring` profile) is in `z3-contract.yaml` under `networks.<name>.ports`.
 
-For non-mainnet networks, host ports for services without an upstream per-network convention (Zaino, Zallet, monitoring) use a +10000 offset relative to mainnet, with two exceptions. Regtest Zebra RPC moves to host `29232` because `28232` is already mainnet Zallet's host port. Zebra's metrics port stays in-network only on every network (no host publication).
+For non-mainnet networks, host ports for services without an upstream per-network convention (Zaino, Zingod, Zallet, monitoring) use a +10000 offset relative to mainnet, with two exceptions. Regtest Zebra RPC moves to host `29232` because `28232` is already mainnet Zallet's host port. Zebra's metrics port stays in-network only on every network (no host publication).
 
 Regtest also uses Zebra's testnet container-port defaults.
 
@@ -61,6 +61,7 @@ Per-service health surface. The YAML's `healthchecks:` block carries the per-ser
 Operational details worth knowing:
 
 - **Zaino's check is a TCP probe on the gRPC port.** It confirms a listener exists; it does not validate the gRPC handler. Do not use it for production routing decisions.
+- **Zingod's check is its public `/readyz` over HTTPS on the gRPC port** (self-signed certificate, verification skipped). It returns 503 until Zingod's indexes reach the network tip. Zingod starts with Zebra and indexes as Zebra syncs, so like Zebra it reports unhealthy for the first sync.
 - **Zallet has no healthcheck.** Its distroless image has no shell or probe binary, so `depends_on: condition: service_healthy` against Zallet hangs. Gate on Zebra's `/ready` instead and assume Zallet follows.
 - **`/ready` is sync-strict; `/healthy` is peer-only.** `/healthy` returns success when Zebra has at least `ZEBRA_HEALTH__MIN_CONNECTED_PEERS` peers. `/ready` independently requires that peer minimum, a sync status close to tip, a present chain tip, a local tip age within `ready_max_tip_age`, and estimated lag within `ZEBRA_HEALTH__READY_MAX_BLOCKS_BEHIND`. Estimated lag extrapolates from the best tip's header timestamp; tip age measures elapsed time since Zebra's local height increased, so the two checks do not share a clock. Mainnet keeps Zebra's 2-block default. Testnet uses 4 blocks as the bounded correction for an observed `lag=3` transition during a canonically current 225-second gap; release evidence must validate the header-time offset and both failure boundaries independently. Use `/ready` for production; the tracked `docker-compose.override.yml.example` flips to `/healthy` for development.
 
@@ -82,7 +83,7 @@ For the canonical machine-readable inventory (every variable, its namespace tag,
 
 ### Profiles
 
-Two Compose profiles are available across every network. `monitoring` adds Prometheus, Grafana, Jaeger, and AlertManager. `indexer` adds the Zaino indexer (lightwalletd-compatible gRPC plus a JSON-RPC proxy) for explorers, faucets, and light-client backends. Enable with `docker compose --env-file .env.<network> --profile <name> up -d`. Profile-gated identifiers in the YAML (Zaino's DNS name, volume, ports, healthcheck, and env vars) carry an explicit `profile:` field.
+Three Compose profiles are available across every network. `monitoring` adds Prometheus, Grafana, Jaeger, and AlertManager. `indexer` adds the Zaino indexer (lightwalletd-compatible gRPC plus a JSON-RPC proxy) for explorers, faucets, and light-client backends. `zingod` adds the Zingod indexer (lightwalletd-compatible gRPC over TLS); its host ports differ from Zaino's, so the two profiles can run together. Enable with `docker compose --env-file .env.<network> --profile <name> up -d`. Profile-gated identifiers in the YAML (each indexer's DNS name, volume, ports, healthcheck, and env vars) carry an explicit `profile:` field.
 
 ## What z3 does NOT publish
 
@@ -110,6 +111,7 @@ These files are tracked defaults. Operators should not edit them; doing so creat
 | `.env.mainnet`, `.env.testnet`, `.env.regtest` | Per-network defaults. A command that omits `--env-file` can take operator overrides from the auto-loaded `.env`; a command that selects a network file takes overrides from the invoking shell or an operator-selected env file. |
 | `config/<network>/zallet.toml.example` | Zallet config template. |
 | `config/<network>/zaino.toml.example` | Zaino config template. |
+| `config/<network>/zingod.toml.example` | Zingod config template. |
 
 ### Local (gitignored)
 
@@ -122,6 +124,8 @@ These files are created locally by `scripts/setup-network.sh <network>` and edit
 | `docker-compose.<network>.override.yml` | Local user (optional) | Per-host testnet/regtest overrides. **Not auto-loaded;** pass with `-f` or append to `COMPOSE_FILE` explicitly. |
 | `config/<network>/zallet.toml` | `setup-network.sh` (cp from `.example`) | Active Zallet config. Edit to taste. |
 | `config/<network>/zaino.toml` | `setup-network.sh` (cp from `.example`) | Active Zaino config. Edit to taste. |
+| `config/<network>/zingod.toml` | `setup-network.sh` (cp from `.example`) | Active Zingod config. Edit to taste. |
+| `config/<network>/tls/` | `setup-network.sh` (empty) | Optional Zingod certificate pair, mounted at `/etc/zingod/tls`. |
 
 After `git pull`, diff your live `.toml` against the refreshed `.example`; apply any desired changes by hand:
 

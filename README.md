@@ -1,6 +1,6 @@
 # Z3: a Zcash node platform
 
-Z3 runs **Zebra** (full node) and **Zallet** (wallet) together with Docker Compose, on mainnet, testnet, or a local regtest network. An optional **Zaino** indexer adds a lightwalletd-compatible gRPC endpoint behind the `indexer` profile.
+Z3 runs **Zebra** (full node) and **Zallet** (wallet) together with Docker Compose, on mainnet, testnet, or a local regtest network. An optional indexer adds a lightwalletd-compatible gRPC endpoint: **Zaino** behind the `indexer` profile, or **Zingod** behind the `zingod` profile.
 
 Two kinds of people use Z3, and this README is split for them:
 
@@ -72,6 +72,13 @@ docker compose --env-file .env.regtest up -d
 
 After the first run, the `up -d` line alone is enough. See [docs/regtest.md](docs/regtest.md) for test commands and the full workflow.
 
+**Start Z3 with an indexer.** For light wallets, explorers, or faucets, add one indexer's profile to the start command (details in [Indexer](#indexer)):
+
+```bash
+docker compose --env-file .env.<network> --profile indexer up -d   # Zaino
+docker compose --env-file .env.<network> --profile zingod up -d    # Zingod
+```
+
 ### Where your data lives
 
 Each network keeps its chain state in a Docker named volume called `z3-<network>-chain`, which lands under Docker's data root (on Linux, `/var/lib/docker/volumes/`). Mainnet is roughly **300 GB**; size the disk before you start.
@@ -108,11 +115,18 @@ Default UI host ports are globally unique across the three networks (mainnet Gra
 
 ### Indexer
 
-The Zaino indexer ships behind a Compose profile. It adds a lightwalletd-compatible gRPC endpoint (mainnet `8137`) and a JSON-RPC proxy (mainnet `8237`) for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack does not need it. Zebra and Zallet also use the word "indexer" for separate configuration and build surfaces; the [FAQ distinguishes their requirements](docs/faq.md#q-which-indexer-does-z3-use-and-does-zebra-need-the-indexer-build-feature).
+Two lightwalletd-compatible indexers ship behind Compose profiles, for explorers, faucets, and light-wallet backends. Zallet reaches Zebra directly, so the default stack needs neither. Zebra and Zallet also use the word "indexer" for separate configuration and build surfaces; the [FAQ distinguishes their requirements](docs/faq.md#q-which-indexer-does-z3-use-and-does-zebra-need-the-indexer-build-feature).
 
-```bash
-docker compose --env-file .env.<network> --profile indexer up -d
-```
+- **Zaino** (`--profile indexer`): gRPC on mainnet `8137` and a JSON-RPC proxy on `8237`. Starts once Zebra is `/ready`.
+- **[Zingod](https://github.com/zingolabs/zingod)** (`--profile zingod`): gRPC over TLS on mainnet `8138`, so it can run alongside Zaino. Starts with Zebra and indexes as Zebra syncs. Like Zebra's `/ready`, its health check stays unhealthy until both reach the network tip. Watch progress with `curl -sk https://localhost:8138/status`.
+
+Zingod serves a self-signed certificate until you give it your own, which wallets that verify certificates require:
+
+1. Copy your certificate chain and key into `config/<network>/tls/` as `fullchain.pem` and `privkey.pem`, readable by uid 1000: `sudo chown -R 1000:1000 config/<network>/tls`.
+2. In `config/<network>/zingod.toml`, comment out `tls = "self_signed"` and uncomment the `tls = { cert_path = ..., key_path = ... }` line below it.
+3. Restart: `docker compose --env-file .env.<network> --profile zingod restart zingod`.
+
+On renewal, replace the two files in place; Zingod reloads them within a minute, with no restart.
 
 ### Stopping the stack
 
@@ -158,9 +172,9 @@ graph LR
     Zaino -->|gRPC| LightClients["Light wallet<br/>clients"]
 ```
 
-**Zebra** syncs and validates the Zcash blockchain. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary. **Zaino** is optional, behind the `indexer` profile: it exposes a standalone lightwalletd-compatible gRPC interface for external light wallet clients.
+**Zebra** syncs and validates the Zcash blockchain. **Zallet** embeds Zaino's indexer libraries internally and connects directly to Zebra's JSON-RPC; it does not use the standalone Zaino service. The Zallet image also ships a zebra-state backend binary, but z3 runs the `zallet-zaino` binary. **Zaino** (`indexer` profile) and **Zingod** (`zingod` profile) are optional: each exposes a standalone lightwalletd-compatible gRPC interface for external light wallet clients.
 
-Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zallet](https://github.com/zcash/zallet).
+Image pins live as `${VAR:-tag}` defaults in `docker-compose.yml`; override any pin with `Z3_ZEBRA_IMAGE`, `Z3_ZAINO_IMAGE`, `Z3_ZINGOD_IMAGE`, or `Z3_ZALLET_IMAGE`. Upstream sources: [Zebra](https://github.com/ZcashFoundation/zebra), [Zaino](https://github.com/zingolabs/zaino), [Zingod](https://github.com/zingolabs/zingod), [Zallet](https://github.com/zcash/zallet).
 
 ### Service endpoints
 
@@ -173,9 +187,10 @@ Published host ports are chosen per `.env.<network>` so all networks coexist on 
 | Zebra health | `http://localhost:<port>/ready` | `Z3_ZEBRA_HOST_HEALTH_PORT` |
 | Zaino gRPC (plaintext, no TLS; indexer profile) | `localhost:<port>` | `Z3_ZAINO_HOST_GRPC_PORT` |
 | Zaino JSON-RPC (indexer profile) | `http://localhost:<port>` | `Z3_ZAINO_HOST_JSON_RPC_PORT` |
+| Zingod gRPC (TLS, self-signed by default; zingod profile) | `localhost:<port>` | `Z3_ZINGOD_HOST_GRPC_PORT` |
 | Zallet RPC | `http://localhost:<port>` | `Z3_ZALLET_HOST_RPC_PORT` |
 
-Inside the network, services resolve by DNS name (`zebra`, `zaino`, `zallet`) on Zebra's per-network container ports.
+Inside the network, services resolve by DNS name (`zebra`, `zaino`, `zingod`, `zallet`) on Zebra's per-network container ports.
 
 ### Attaching your own services
 
@@ -269,9 +284,9 @@ diff config/mainnet/zallet.toml config/mainnet/zallet.toml.example
 
 ### Platform configuration (ARM64)
 
-Zebra and Zallet are multi-arch; Docker picks the host's native arch automatically, no override needed. Zaino is pinned to `linux/amd64` because its upstream image publishes amd64 only. On Apple Silicon it runs under emulation by default; the workload is light enough that this rarely matters.
+Zebra and Zallet are multi-arch; Docker picks the host's native arch automatically, no override needed. Zaino and Zingod are pinned to `linux/amd64` because their upstream images publish amd64 only. On Apple Silicon they run under emulation by default; the workload is light enough that this rarely matters.
 
-To run Zaino natively on arm64, build it from source:
+To run Zaino (or Zingod, substituting `zingod` and `--profile zingod`) natively on arm64, build it from source:
 
 ```bash
 scripts/vendor.sh zaino
@@ -340,6 +355,7 @@ Z3 declares each volume with an explicit `name:` so the external Docker identifi
 |--------|----------|
 | `chain` | Zebra blockchain state (~300 GB mainnet, ~30 GB testnet) |
 | `zaino` | Zaino indexer database (indexer profile) |
+| `zingod` | Zingod indexes and TLS state (zingod profile) |
 | `zallet` | Zallet wallet database (contains keys) |
 | `cookie` | RPC authentication cookie for mainnet/testnet (regtest disables cookie auth) |
 
@@ -352,6 +368,7 @@ For backups, external SSDs, or shared storage, override volume paths in `.env`:
 ```bash
 Z3_CHAIN_DATA_PATH=/mnt/ssd/zebra-state
 Z3_ZAINO_DATA_PATH=/mnt/ssd/zaino-data
+Z3_ZINGOD_DATA_PATH=/mnt/ssd/zingod-data
 Z3_ZALLET_DATA_PATH=/mnt/ssd/zallet-data
 ```
 
@@ -360,10 +377,11 @@ Fix permissions before starting:
 ```bash
 ./scripts/fix-permissions.sh zebra /mnt/ssd/zebra-state
 ./scripts/fix-permissions.sh zaino /mnt/ssd/zaino-data
+./scripts/fix-permissions.sh zingod /mnt/ssd/zingod-data
 ./scripts/fix-permissions.sh zallet /mnt/ssd/zallet-data
 ```
 
-Zebra, Zaino, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
+Zebra, Zaino, Zingod, and Zallet each run as a specific non-root user. Directories must have correct ownership (set by the script) and `700` permissions. Never use `755` or `777`.
 
 Operators whose host uid is not `1000` do **not** need to coordinate uids for Zallet's bind-mounted config. Zallet runs as uid 1000 (distroless image), and `setup-network.sh` makes the generated TOMLs readable by service containers (`0644`), re-applying that mode on every run including existing files. The encryption identity needs no such handling: it lives in the `z3-<network>-zallet` volume, created by uid 1000 in-container, so Zallet reads it directly.
 
@@ -396,9 +414,12 @@ Zebra (/ready: synced near tip)
   -> Cookie permissions (.cookie readable on cookie-auth networks)
   -> Zallet (RPC responding)
   -> Zaino (gRPC port responding; indexer profile)
+
+Zebra (started) + Cookie permissions
+  -> Zingod (/readyz: indexes at the network tip; zingod profile)
 ```
 
-The default compose gates Zallet on Zebra's `/ready` endpoint and on the cookie-permissions sidecar when cookie auth is enabled; the indexer profile adds Zaino under the same gates. For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to switch Zebra gating to `/healthy` (allows services to start during sync, but they may error until Zebra catches up).
+The default compose gates Zallet on Zebra's `/ready` endpoint and on the cookie-permissions sidecar when cookie auth is enabled; the indexer profile adds Zaino under the same gates. Zingod waits only for Zebra to start and indexes as Zebra syncs. For development, copy `docker-compose.override.yml.example` to `docker-compose.override.yml` to switch Zebra gating to `/healthy` (allows services to start during sync, but they may error until Zebra catches up).
 
 ### Monitoring sync progress
 

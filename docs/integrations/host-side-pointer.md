@@ -18,6 +18,7 @@ Host ports per network (full matrix in [`z3-contract.yaml`](../../z3-contract.ya
 | Zebra `/ready` | `http://127.0.0.1:8080/ready` | `http://127.0.0.1:18080/ready` | `http://127.0.0.1:28080/ready` |
 | Zaino gRPC (plaintext h2c; indexer profile) | `127.0.0.1:8137` | `127.0.0.1:18137` | `127.0.0.1:28137` |
 | Zaino JSON-RPC (indexer profile) | `http://127.0.0.1:8237` | `http://127.0.0.1:18237` | `http://127.0.0.1:28237` |
+| Zingod gRPC (TLS; zingod profile) | `127.0.0.1:8138` | `127.0.0.1:18138` | `127.0.0.1:28138` |
 | Zallet RPC | `http://127.0.0.1:28232` | `http://127.0.0.1:40232` | `http://127.0.0.1:50232` |
 | rpc-router (regtest only) | n/a | n/a | `http://127.0.0.1:8181` |
 

@@ -1,6 +1,6 @@
 # Z3 Regtest Environment
 
-Local end-to-end testing of the Z3 stack (Zebra, Zallet, and the rpc-router, plus the optional Zaino indexer) in regtest mode.
+Local end-to-end testing of the Z3 stack (Zebra, Zallet, and the rpc-router, plus the optional Zaino or Zingod indexer) in regtest mode.
 
 Uses the base `docker-compose.yml` with `docker-compose.regtest.yml` overlay and `.env.regtest` for regtest-specific configuration. Volumes are isolated via `COMPOSE_PROJECT_NAME=z3-regtest`, so regtest data never conflicts with mainnet or testnet.
 
@@ -19,7 +19,7 @@ From the repo root:
 
 This will:
 
-1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zallet.toml`) into live gitignored files
+1. Copy the per-network config templates (`zebra.toml`, `zaino.toml`, `zingod.toml`, `zallet.toml`) into live gitignored files
 2. Generate the Zallet encryption identity in-container into the data volume (if not already present)
 3. Generate and inject the Zallet RPC password hash in `config/regtest/zallet.toml`
 4. Start Zebra in regtest mode with the activation heights in `config/regtest` (Canopy at 1, NU5 through NU6.3 at 2)
@@ -49,6 +49,7 @@ Zebra and Zallet use pre-built images. The rpc-router builds from source on firs
 |---------|----------|-------------|
 | rpc-router | http://localhost:8181 | JSON-RPC router (Zebra + Zallet) |
 | Zaino gRPC (indexer profile) | localhost:28137 | lightwalletd-compatible gRPC (plaintext h2c) |
+| Zingod gRPC (zingod profile) | localhost:28138 | lightwalletd-compatible gRPC (TLS, self-signed) |
 | Zebra RPC | http://localhost:29232 | Direct Zebra JSON-RPC |
 | Zallet RPC | http://localhost:50232 | Direct Zallet JSON-RPC |
 
@@ -108,6 +109,21 @@ grpcurl -plaintext \
   -d '{}' \
   127.0.0.1:28137 \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock
+```
+
+## Test Zingod gRPC
+
+Zingod ships behind the `zingod` profile and serves the same protocol over TLS with a self-signed certificate, on host port `28138` (`Z3_ZINGOD_HOST_GRPC_PORT`). It reads the regtest upgrade schedule from Zebra and serves once its indexes reach Zebra's tip:
+
+```bash
+docker compose --env-file .env.regtest --profile zingod up -d zingod
+curl -sk https://127.0.0.1:28138/status
+
+grpcurl -insecure \
+  -import-path vendor/zaino/zaino-proto/proto \
+  -proto service.proto \
+  127.0.0.1:28138 \
+  cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
 ```
 
 ## OpenRPC Playground

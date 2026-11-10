@@ -87,7 +87,7 @@
   "$defs": {
     "profileName": {
       "type": "string",
-      "enum": ["monitoring", "indexer"]
+      "enum": ["monitoring", "indexer", "zingod"]
     },
     "networkName": {
       "type": "string",
@@ -178,7 +178,7 @@
       "required": ["transport"],
       "additionalProperties": false,
       "properties": {
-        "transport": {"type": "string", "enum": ["http", "tcp", "cli", "none"]},
+        "transport": {"type": "string", "enum": ["http", "https", "tcp", "cli", "none"]},
         "port":      {"type": "integer", "minimum": 1, "maximum": 65535},
         "liveness":  {"type": ["string", "null"]},
         "readiness": {"type": ["string", "null"]},
