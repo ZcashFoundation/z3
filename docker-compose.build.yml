@@ -1,8 +1,8 @@
 # Opt-in source-build overlay.
 #
 # The default stack pulls pinned images and needs no source checkout. This
-# overlay re-adds build: contexts so contributors can build Zebra, Zaino, and
-# Zallet from upstream source (for native arm64, or to test a local patch).
+# overlay re-adds build: contexts so contributors can build Zebra, Zaino,
+# Zingod, and Zallet from upstream source (for native arm64, or to test a local patch).
 #
 # Usage:
 #   scripts/vendor.sh                 # clone upstream into vendor/ at the pinned tags
@@ -30,6 +30,11 @@ services:
       dockerfile: Dockerfile
       args:
         NO_TLS: "true"
+
+  zingod:
+    build:
+      context: ./vendor/zingod
+      dockerfile: Dockerfile
 
   zallet:
     build:

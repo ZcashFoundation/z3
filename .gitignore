@@ -28,12 +28,15 @@ config/**
 !config/mainnet/
 !config/mainnet/zaino.toml.example
 !config/mainnet/zallet.toml.example
+!config/mainnet/zingod.toml.example
 !config/testnet/
 !config/testnet/zaino.toml.example
 !config/testnet/zallet.toml.example
+!config/testnet/zingod.toml.example
 !config/regtest/
 !config/regtest/zaino.toml.example
 !config/regtest/zallet.toml.example
+!config/regtest/zingod.toml.example
 !config/regtest/zebra.toml.example
 
 # Runtime environment overrides (see .env.example for available variables)

@@ -12,7 +12,7 @@
 #   docs/contract.md                     concept guide (stability promise, file ownership, .env loading)
 #   docs/integrations/                   integration examples
 
-contract_version: "2.0.0"
+contract_version: "2.1.0"
 
 # Version-bump policy. Independent from the z3 git tag.
 versioning:
@@ -27,6 +27,7 @@ versioning:
 service_dns:
   zebra:   {dns: zebra}
   zaino:   {dns: zaino, profile: indexer}
+  zingod:  {dns: zingod, profile: zingod}
   zallet:  {dns: zallet}
 
 # Cookie file path inside containers on networks whose rpc_auth.mode is cookie.
@@ -49,6 +50,7 @@ networks:
       chain:  "z3-mainnet-chain"
       cookie: "z3-mainnet-cookie"
       zaino:  {name: "z3-mainnet-zaino", profile: indexer}
+      zingod: {name: "z3-mainnet-zingod", profile: zingod}
       zallet: "z3-mainnet-zallet"
     ports:
       zebra_rpc:          {container: 8232,  host: 8232}
@@ -57,6 +59,7 @@ networks:
       zebra_metrics:      {container: 9999}                 # in-network Prometheus scrape endpoint
       zaino_grpc:         {container: 8137,  host: 8137,   profile: indexer}
       zaino_json_rpc:     {container: 8237,  host: 8237,   profile: indexer}
+      zingod_grpc:        {container: 8137,  host: 8138,   profile: zingod}
       zallet_rpc:         {container: 28232, host: 28232}
       prometheus:         {container: 9090,  host: 9094,   profile: monitoring}
       grafana:            {container: 3000,  host: 3000,   profile: monitoring}
@@ -76,9 +79,10 @@ networks:
       chain:  "z3-testnet-chain"
       cookie: "z3-testnet-cookie"
       zaino:  {name: "z3-testnet-zaino", profile: indexer}
+      zingod: {name: "z3-testnet-zingod", profile: zingod}
       zallet: "z3-testnet-zallet"
     ports:
-      # Health, Zaino, Zallet host ports use a +10000 offset relative to
+      # Health, Zaino, Zingod, Zallet host ports use a +10000 offset relative to
       # mainnet so the two networks can run concurrently on the same host.
       zebra_rpc:          {container: 18232, host: 18232}
       zebra_p2p:          {container: 18233, host: 18233}
@@ -86,6 +90,7 @@ networks:
       zebra_metrics:      {container: 9999}
       zaino_grpc:         {container: 8137,  host: 18137,  profile: indexer}
       zaino_json_rpc:     {container: 8237,  host: 18237,  profile: indexer}
+      zingod_grpc:        {container: 8137,  host: 18138,  profile: zingod}
       zallet_rpc:         {container: 28232, host: 40232}
       prometheus:         {container: 9090,  host: 19094,  profile: monitoring}
       grafana:            {container: 3000,  host: 13000,  profile: monitoring}
@@ -109,6 +114,7 @@ networks:
       chain:  "z3-regtest-chain"
       cookie: "z3-regtest-cookie"
       zaino:  {name: "z3-regtest-zaino", profile: indexer}
+      zingod: {name: "z3-regtest-zingod", profile: zingod}
       zallet: "z3-regtest-zallet"
     ports:
       # Regtest inherits Zebra's testnet container-port defaults.
@@ -119,6 +125,7 @@ networks:
       zebra_metrics:      {container: 9999}
       zaino_grpc:         {container: 8137,  host: 28137,  profile: indexer}
       zaino_json_rpc:     {container: 8237,  host: 28237,  profile: indexer}
+      zingod_grpc:        {container: 8137,  host: 28138,  profile: zingod}
       zallet_rpc:         {container: 28232, host: 50232}
       rpc_router:         {container: 8181,  host: 8181}
       prometheus:         {container: 9090,  host: 29094,  profile: monitoring}
@@ -142,6 +149,12 @@ healthchecks:
     port: 8137
     profile: indexer
     note: "TCP probe on the gRPC port. Confirms a listener exists; does not validate the gRPC handler. Consumers should not rely on this for production routing decisions."
+  zingod:
+    transport: https
+    port: 8137
+    profile: zingod
+    readiness: "/readyz"   # public, on the gRPC listener; 503 until indexes reach the tip
+    note: "Self-signed certificate by default; probes skip verification."
   zallet:
     transport: none
     note: "No healthcheck: distroless image has no shell or probe binary. A consumer using depends_on: condition: service_healthy against zallet will hang. Wait for Zebra's /ready instead and assume Zallet is up shortly after."
@@ -164,7 +177,7 @@ env_vars:
   network:
     - {name: COMPOSE_PROJECT_NAME, namespace: compose, description: "Compose project name; selects the per-network instance."}
     - {name: Z3_NETWORK, namespace: z3, values: [Mainnet, Testnet, Regtest], description: "Network selector. PascalCase per Zebra's serde."}
-    - {name: Z3_CONFIG_DIR, namespace: z3, description: "Per-network config dir (zallet.toml, zaino.toml)."}
+    - {name: Z3_CONFIG_DIR, namespace: z3, description: "Per-network config dir (zallet.toml, zaino.toml, zingod.toml)."}
 
   images:
     # Image-pin defaults live in docker-compose.yml as ${VAR:-tag} fallbacks.
@@ -172,9 +185,10 @@ env_vars:
     # at the end of this file for per-image platform constraints.
     - {name: Z3_ZEBRA_IMAGE, namespace: z3}
     - {name: Z3_ZAINO_IMAGE, namespace: z3, profile: indexer}
+    - {name: Z3_ZINGOD_IMAGE, namespace: z3, profile: zingod}
     - {name: Z3_ZALLET_IMAGE, namespace: z3}
     - {name: Z3_ZEBRA_BUILD_FEATURES, namespace: z3, description: "Build arg when building Zebra from source."}
-    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra and Zallet are multi-arch (no pin needed); Zaino publishes amd64 only and is pinned in compose. Override to build Zaino native arm64 from source (docker-compose.build.yml)."}
+    - {name: DOCKER_PLATFORM, namespace: docker, description: "Optional platform pin. Zebra and Zallet are multi-arch (no pin needed); Zaino and Zingod publish amd64 only and are pinned in compose. Override to build them native arm64 from source (docker-compose.build.yml)."}
 
   ports:
     # Host ports (z3 controls the per-network port matrix; testnet/regtest offset).
@@ -183,6 +197,7 @@ env_vars:
     - {name: Z3_ZEBRA_HOST_HEALTH_PORT, namespace: z3, scope: host}
     - {name: Z3_ZAINO_HOST_GRPC_PORT, namespace: z3, scope: host, profile: indexer}
     - {name: Z3_ZAINO_HOST_JSON_RPC_PORT, namespace: z3, scope: host, profile: indexer}
+    - {name: Z3_ZINGOD_HOST_GRPC_PORT, namespace: z3, scope: host, profile: zingod}
     - {name: Z3_ZALLET_HOST_RPC_PORT, namespace: z3, scope: host}
     - {name: Z3_REGTEST_RPC_ROUTER_HOST_PORT, namespace: z3, scope: host, network: regtest, description: "rpc-router host port (regtest only)."}
     # Container ports: only Zebra's vary per network (upstream Zebra defaults
@@ -195,6 +210,7 @@ env_vars:
   paths:
     - {name: Z3_CHAIN_DATA_PATH, namespace: z3, description: "Override chain volume with a bind-mount path."}
     - {name: Z3_ZAINO_DATA_PATH, namespace: z3, profile: indexer}
+    - {name: Z3_ZINGOD_DATA_PATH, namespace: z3, profile: zingod}
     - {name: Z3_ZALLET_DATA_PATH, namespace: z3}
     - {name: Z3_COOKIE_PATH, namespace: z3, description: "Override cookie volume (advanced; breaks the shared-volume pattern)."}
 
@@ -215,6 +231,7 @@ env_vars:
     # flips the whole stack and per-service overrides still win.
     - {name: Z3_ZEBRA_RUST_LOG, namespace: z3}
     - {name: Z3_ZAINO_RUST_LOG, namespace: z3, profile: indexer}
+    - {name: Z3_ZINGOD_RUST_LOG, namespace: z3, profile: zingod}
     - {name: Z3_ZALLET_RUST_LOG, namespace: z3}
     - {name: ZEBRA_TRACING__FILTER, namespace: zebra, description: "Advanced: Zebra's own tracing-subscriber filter (independent of RUST_LOG)."}
 
@@ -246,11 +263,13 @@ ecosystem_vars:
 profiles:
   monitoring: "Prometheus + Grafana + Jaeger + AlertManager"
   indexer: "Zaino indexer (lightwalletd-compatible gRPC + JSON-RPC proxy) for explorers, faucets, and light-client backends"
+  zingod: "Zingod indexer (lightwalletd-compatible gRPC over TLS); runs alongside or instead of the indexer profile"
 
 # Platform constraints per image. Entries listed as amd64-only run under
 # emulation on arm64 hosts even when DOCKER_PLATFORM=linux/arm64 is set.
-# For native arm64 of Zaino, build locally from source (docker-compose.build.yml).
+# For native arm64 of Zaino or Zingod, build locally from source (docker-compose.build.yml).
 image_platforms:
   zebra:  [linux/amd64, linux/arm64]
   zaino:  [linux/amd64]
+  zingod: [linux/amd64]
   zallet: [linux/amd64, linux/arm64]

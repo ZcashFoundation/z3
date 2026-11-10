@@ -50,6 +50,29 @@ grpcurl -plaintext \
   cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLatestBlock
 ```
 
+## Zingod instead of Zaino
+
+[Zingod](https://github.com/zingolabs/zingod) serves the same `CompactTxStreamer` protocol behind the `zingod` profile (`docker compose --env-file .env.<network> --profile zingod up -d`). Its host ports differ from Zaino's, so both can run at once:
+
+| Network | Host endpoint |
+|---------|----------------|
+| Mainnet | `127.0.0.1:8138` |
+| Testnet | `127.0.0.1:18138` |
+| Regtest | `127.0.0.1:28138` |
+
+Zingod terminates TLS itself. Until you give it a certificate it serves a self-signed one, so ad-hoc clients skip verification (`-insecure`, `curl -k`). Wallets that verify certificates need a CA-issued pair: see [Indexer in the README](../../README.md#indexer) for the three-step setup, or put the TLS-terminating proxy below in front. In-network peers reach it at `zingod:8137`. `/readyz` and `/status` on the same port report whether its indexes have reached the tip.
+
+```bash
+curl -sk https://127.0.0.1:8138/status
+
+# -insecure accepts the self-signed certificate; the proto files are the same as above
+grpcurl -insecure \
+  -import-path vendor/zaino/zaino-proto/proto \
+  -proto service.proto \
+  127.0.0.1:8138 \
+  cash.z.wallet.sdk.rpc.CompactTxStreamer/GetLightdInfo
+```
+
 ## Rust (Tonic) example
 
 ```rust

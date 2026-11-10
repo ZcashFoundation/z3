@@ -4,7 +4,7 @@
 # (docker-compose.build.yml). vendor/ is gitignored.
 #
 # Usage:
-#   scripts/vendor.sh                 # fetch all three (zebra, zaino, zallet)
+#   scripts/vendor.sh                 # fetch all (zebra, zaino, zingod, zallet)
 #   scripts/vendor.sh zaino           # fetch one
 # Re-run after bumping an image pin to update the matching checkout.
 #
@@ -12,15 +12,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-declare -a ALL=(zebra zaino zallet)
+declare -a ALL=(zebra zaino zingod zallet)
 declare -A URL=(
   [zebra]="https://github.com/ZcashFoundation/zebra"
   [zaino]="https://github.com/zingolabs/zaino"
+  [zingod]="https://github.com/zingolabs/zingod"
   [zallet]="https://github.com/zcash/zallet"
 )
 declare -A REF=(
   [zebra]="v6.2.3"
   [zaino]="0.6.0"
+  [zingod]="v1.1.0"
   [zallet]="v0.1.0-beta.1"
 )
 

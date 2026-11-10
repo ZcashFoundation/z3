@@ -259,12 +259,9 @@ def gated_volume_names(spec: dict, profile: str) -> set[str]:
 
 def validate_default_excludes_profiled_services(asserter: Asserter, network_name: str,
                                                 spec: dict, contract: dict) -> None:
-    """Assert the default render (no --profile flags) excludes every
-    indexer-gated identifier: service block, host ports, and volume.
+    """Default render (no --profile flags) excludes every profile-gated service, host port, volume.
 
-    Identifiers are derived from the contract's profile: indexer entries
-    rather than hardcoded, so a future profile-gated service is covered here
-    without a script change.
+    - Derived from the contract's `profile:` keys (new profile = covered, no script change)
     """
     env_file = ROOT / f".env.{network_name}"
     if not env_file.exists():
@@ -275,14 +272,15 @@ def validate_default_excludes_profiled_services(asserter: Asserter, network_name
     config = render_compose(network_name, env_file, profiles=[])
     resolved = yaml.safe_load(config)
     services = resolved.get("services", {})
+    profiles = contract.get("profiles", {})
 
-    for service in sorted(gated_service_names(contract, "indexer")):
+    for service in sorted(set().union(*(gated_service_names(contract, p) for p in profiles))):
         if service in services:
             asserter.fail(f"default render includes profile-gated service {service}")
         else:
             print(f"  OK   default render excludes service {service}")
 
-    gated_ports = gated_host_ports(spec, "indexer")
+    gated_ports = set().union(*(gated_host_ports(spec, p) for p in profiles))
     rendered_hosts = {
         int(port["published"])
         for service_spec in services.values()
@@ -300,7 +298,7 @@ def validate_default_excludes_profiled_services(asserter: Asserter, network_name
         for vol_spec in resolved.get("volumes", {}).values()
         if isinstance(vol_spec, dict)
     }
-    for volume in sorted(gated_volume_names(spec, "indexer")):
+    for volume in sorted(set().union(*(gated_volume_names(spec, p) for p in profiles))):
         if volume in rendered_volume_names:
             asserter.fail(f"default render includes profile-gated volume {volume}")
         else:
@@ -329,10 +327,10 @@ def validate_healthchecks(asserter: Asserter, network_name: str,
             )
             continue
 
-        if transport == "http" and spec.get("readiness"):
-            pattern = rf"http://127\.0\.0\.1:{port}{re.escape(spec['readiness'])}"
+        if transport in ("http", "https") and spec.get("readiness"):
+            pattern = rf"{transport}://127\.0\.0\.1:{port}{re.escape(spec['readiness'])}"
             asserter.present(
-                f"{service} healthcheck = http {port}{spec['readiness']}",
+                f"{service} healthcheck = {transport} {port}{spec['readiness']}",
                 pattern, config,
             )
         elif transport == "tcp":

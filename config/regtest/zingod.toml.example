@@ -1,0 +1,14 @@
+# Zingod configuration: Regtest (--profile zingod)
+#
+# - Zebra RPC unauthenticated on regtest (ZEBRA_RPC__ENABLE_COOKIE_AUTH=false, no credentials)
+# - Upgrade schedule read from Zebra at boot (config/regtest/zebra.toml)
+
+network = "regtest"
+
+[[trusted_validators]]
+jsonrpc_address = "zebra:18232"
+
+[serve]
+tls = "self_signed"
+# Own pair: files in config/<network>/tls/ (readable by uid 1000), reloaded on change
+# tls = { cert_path = "/etc/zingod/tls/fullchain.pem", key_path = "/etc/zingod/tls/privkey.pem" }
